@@ -71,13 +71,14 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Building application...'
-                // Compilar sin ejecutar pruebas
-                bat 'mvn clean package -DskipTests'
+                // Compilar con encoding específico
+                withEnv(['JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8']) {
+                    bat 'mvn clean package -DskipTests -Dproject.build.sourceEncoding=UTF-8 -Dproject.reporting.outputEncoding=UTF-8'
+                }
             }
             post {
                 success {
                     echo 'Build successful!'
-                    // Archivar el JAR generado
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                 }
             }
