@@ -12,9 +12,7 @@ pipeline {
     environment {
         // Rutas de las herramientas (ajusta según tu sistema)
         JAVA_HOME = 'E:\\JAVA\\17'
-        MAVEN_HOME = 'C:\\Program Files\\Apache\\maven'
-        // Credenciales y configuración
-        FIREBASE_CREDENTIALS = credentials('firebase-credentials')
+        MAVEN_HOME = 'C:\\Program Files\\Apache\\apache-maven-3.9.9'
         // Variables del proyecto
         PROJECT_NAME = 'veterinaria-backend'
         // Puertos y configuración de despliegue
@@ -53,11 +51,14 @@ pipeline {
                 bat 'java -version'
                 bat 'mvn -version'
                 
-                // Copiar archivo de credenciales de Firebase
-                bat "copy /Y ${FIREBASE_CREDENTIALS} src\\main\\resources\\firebase-service-account.json"
+                // Copiar archivo de credenciales de Firebase usando withCredentials
+                withCredentials([file(credentialsId: 'firebase-credentials', variable: 'FIREBASE_CONFIG')]) {
+                    powershell '''
+                        Copy-Item $env:FIREBASE_CONFIG -Destination "src/main/resources/firebase-service-account.json" -Force
+                    '''
+                }
             }
         }
-
         // Etapa de verificación de dependencias
         stage('Check Dependencies') {
             steps {
