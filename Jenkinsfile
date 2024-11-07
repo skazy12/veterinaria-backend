@@ -13,7 +13,7 @@ pipeline {
         DOCKER_IMAGE = 'veterinaria-backend'
         DOCKER_TAG = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'veterinaria-app'
-        HOST_PORT = '8090'
+        HOST_PORT = '8091'
         CONTAINER_PORT = '8080'
 
         // Configuración del proyecto
