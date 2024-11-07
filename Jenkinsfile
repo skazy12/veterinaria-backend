@@ -13,8 +13,8 @@ pipeline {
         DOCKER_IMAGE = 'veterinaria-backend'
         DOCKER_TAG = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'veterinaria-app'
-        HOST_PORT = '8090'          // Puerto en tu máquina local
-        CONTAINER_PORT = '8080'     // Puerto dentro del contenedor
+        HOST_PORT = '8090'
+        CONTAINER_PORT = '8080'
 
         // Configuración del proyecto
         SPRING_PROFILE = 'prod'
@@ -22,32 +22,29 @@ pipeline {
 
         // Red de Docker
         DOCKER_NETWORK = 'veterinaria-network'
+
+        // Variables de control de despliegue
+        DEPLOY_TIMEOUT = '60'
+        HEALTH_CHECK_RETRIES = '6'
+        HEALTH_CHECK_INTERVAL = '10'
     }
 
-    // Opciones generales
     options {
-        // No permitir ejecuciones concurrentes
         disableConcurrentBuilds()
-        // Timeout global
         timeout(time: 1, unit: 'HOURS')
-        // Mantener solo los últimos 5 builds
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
 
     stages {
-        // Etapa de preparación del ambiente
         stage('Environment Preparation') {
             steps {
                 script {
                     echo 'Preparing environment...'
-                    // Limpiar workspace
                     cleanWs()
 
-                    // Verificar versiones de herramientas
                     bat 'java -version'
                     bat 'mvn -version'
 
-                    // Crear red de Docker si no existe
                     bat """
                         docker network inspect ${DOCKER_NETWORK} > nul 2>&1 || docker network create ${DOCKER_NETWORK}
                     """
@@ -55,23 +52,19 @@ pipeline {
             }
         }
 
-        // Etapa de checkout del código
         stage('Checkout') {
             steps {
                 echo 'Checking out code...'
-                // Usar credenciales de GitHub configuradas
                 git branch: 'main',
                     credentialsId: 'github-credentials',
-                    url: 'https://github.com/skazy12/veterinaria-backend.git'  // Reemplazar con tu URL
+                    url: 'https://github.com/skazy12/veterinaria-backend.git'
             }
         }
 
-        // Etapa de configuración de Firebase
         stage('Setup Firebase Credentials') {
             steps {
                 script {
                     echo 'Setting up Firebase credentials...'
-                    // Copiar archivo de credenciales de Firebase de forma segura
                     withCredentials([file(credentialsId: 'firebase-credentials', variable: 'FIREBASE_CONFIG')]) {
                         bat """
                             if not exist "src\\main\\resources" mkdir "src\\main\\resources"
@@ -82,18 +75,15 @@ pipeline {
             }
         }
 
-        // Etapa de compilación con Maven
         stage('Build Maven') {
             steps {
                 echo 'Building application with Maven...'
-                // Compilar con encoding específico
                 withEnv(['JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8']) {
                     bat 'mvn clean package -DskipTests -Dproject.build.sourceEncoding=UTF-8'
                 }
             }
         }
 
-        // Etapa de pruebas unitarias
         stage('Unit Tests') {
             steps {
                 echo 'Running unit tests...'
@@ -106,32 +96,38 @@ pipeline {
             }
         }
 
-        // Etapa de construcción de imagen Docker
         stage('Build Docker Image') {
             steps {
                 script {
                     echo 'Building Docker image...'
-                    // Construir imagen
                     bat "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
                     bat "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
                 }
             }
         }
 
-        // Etapa de despliegue del contenedor
         stage('Deploy Container') {
             steps {
                 script {
                     echo 'Deploying container...'
 
-                    // Detener y eliminar contenedor anterior si existe
                     bat """
-                        docker stop ${CONTAINER_NAME} 2>nul || exit 0
-                        docker rm ${CONTAINER_NAME} 2>nul || exit 0
-                    """
+                        rem Detener y eliminar contenedor existente
+                        docker container stop ${CONTAINER_NAME} || true
+                        docker container rm ${CONTAINER_NAME} || true
 
-                    // Ejecutar nuevo contenedor
-                    bat """
+                        rem Esperar que el puerto se libere
+                        timeout /t 10 /nobreak
+
+                        rem Verificar y liberar puerto si está en uso
+                        netstat -ano | find "${HOST_PORT}" > nul
+                        if not errorlevel 1 (
+                            echo Puerto ${HOST_PORT} en uso. Intentando liberar...
+                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| find "${HOST_PORT}"') DO TaskKill /PID %%P /F
+                            timeout /t 5 /nobreak
+                        )
+
+                        rem Desplegar nuevo contenedor
                         docker run -d ^
                             --name ${CONTAINER_NAME} ^
                             --network ${DOCKER_NETWORK} ^
@@ -140,49 +136,56 @@ pipeline {
                             -v veterinaria-data:/app/data ^
                             --restart unless-stopped ^
                             ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    """
 
-                    // Esperar a que la aplicación esté disponible
-                    bat """
-                        timeout /t 30 /nobreak
-                        echo Checking application health...
-                        for /l %%x in (1, 1, 10) do (
-                            curl -f http://localhost:${HOST_PORT}/actuator/health && exit 0 || timeout /t 5 /nobreak
-                        )
+                        rem Esperar que el contenedor esté listo
+                        timeout /t 15 /nobreak
                     """
                 }
             }
         }
 
-        // Etapa de verificación post-despliegue
         stage('Verify Deployment') {
             steps {
                 script {
                     echo 'Verifying deployment...'
 
-                    // Verificar estado del contenedor
                     bat """
-                        docker ps | find "${CONTAINER_NAME}"
-                        if errorlevel 1 (
-                            echo Container not running!
+                        rem Verificar que el contenedor está corriendo
+                        docker container inspect -f '{{.State.Running}}' ${CONTAINER_NAME} || (
+                            echo Container failed to start
                             exit 1
                         )
-                    """
 
-                    // Mostrar logs del contenedor
-                    bat "docker logs ${CONTAINER_NAME}"
+                        rem Mostrar logs del contenedor
+                        docker logs ${CONTAINER_NAME}
+
+                        rem Verificar que el puerto está respondiendo
+                        timeout /t 5 /nobreak
+
+                        rem Intentar health check múltiples veces
+                        set /a attempts=0
+                        :HEALTH_CHECK_LOOP
+                        curl -f http://localhost:${HOST_PORT}/actuator/health
+                        if errorlevel 1 (
+                            set /a attempts+=1
+                            if %attempts% lss %HEALTH_CHECK_RETRIES% (
+                                timeout /t %HEALTH_CHECK_INTERVAL% /nobreak
+                                goto HEALTH_CHECK_LOOP
+                            ) else (
+                                echo Health check failed after %HEALTH_CHECK_RETRIES% attempts
+                                exit 1
+                            )
+                        )
+                    """
                 }
             }
         }
     }
 
-    // Acciones post-ejecución
     post {
         always {
             echo 'Cleaning up...'
-            // Limpiar archivo de credenciales de Firebase
             bat 'if exist "src\\main\\resources\\firebase-service-account.json" del /F /Q "src\\main\\resources\\firebase-service-account.json"'
-            // Limpiar workspace
             cleanWs()
         }
 
@@ -206,13 +209,24 @@ pipeline {
                 =========================================
             """
 
-            // Intentar rollback a la versión anterior
             script {
                 bat """
-                    if exist "${CONTAINER_NAME}" (
-                        docker stop ${CONTAINER_NAME}
-                        docker rm ${CONTAINER_NAME}
-                        docker run -d --name ${CONTAINER_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${DOCKER_IMAGE}:latest
+                    rem Verificar si existe el contenedor
+                    docker container inspect ${CONTAINER_NAME} >nul 2>&1
+                    if not errorlevel 1 (
+                        echo Performing rollback...
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+                        timeout /t 5 /nobreak
+
+                        docker run -d ^
+                            --name ${CONTAINER_NAME} ^
+                            --network ${DOCKER_NETWORK} ^
+                            -p ${HOST_PORT}:${CONTAINER_PORT} ^
+                            -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
+                            -v veterinaria-data:/app/data ^
+                            --restart unless-stopped ^
+                            ${DOCKER_IMAGE}:latest
                     )
                 """
             }
