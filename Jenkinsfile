@@ -3,83 +3,92 @@ pipeline {
 
     // Definición de herramientas
     tools {
-        // Nombres que configuramos en Jenkins
-        maven 'Maven3'
-        jdk 'JDK17'
+        maven 'Maven3'  // Debe coincidir con el nombre configurado en Jenkins
+        jdk 'JDK17'     // Debe coincidir con el nombre configurado en Jenkins
     }
 
     // Variables de entorno
     environment {
-        // Rutas de las herramientas (ajusta según tu sistema)
-        JAVA_HOME = 'E:\\JAVA\\17'
-        MAVEN_HOME = 'C:\\Program Files\\Apache\\apache-maven-3.9.9'
-        // Variables del proyecto
-        PROJECT_NAME = 'veterinaria-backend'
-        // Puertos y configuración de despliegue
-        APP_PORT = '8080'
-        // Agregar al PATH las herramientas
-        PATH = "${MAVEN_HOME}\\bin;${JAVA_HOME}\\bin;${env.PATH}"
+        // Configuración de Docker
+        DOCKER_IMAGE = 'veterinaria-backend'
+        DOCKER_TAG = "${BUILD_NUMBER}"
+        CONTAINER_NAME = 'veterinaria-app'
+        HOST_PORT = '8090'          // Puerto en tu máquina local
+        CONTAINER_PORT = '8080'     // Puerto dentro del contenedor
+
+        // Configuración del proyecto
+        SPRING_PROFILE = 'prod'
+        APP_NAME = 'veterinaria-backend'
+
+        // Red de Docker
+        DOCKER_NETWORK = 'veterinaria-network'
     }
 
-    // Opciones generales del pipeline
+    // Opciones generales
     options {
-        // Timeout global
-        timeout(time: 1, unit: 'HOURS')
         // No permitir ejecuciones concurrentes
         disableConcurrentBuilds()
-        // Mantener los últimos builds
+        // Timeout global
+        timeout(time: 1, unit: 'HOURS')
+        // Mantener solo los últimos 5 builds
         buildDiscarder(logRotator(numToKeepStr: '5'))
-    }
-
-    // Triggers del pipeline (opcional)
-    triggers {
-        // Revisar SCM cada hora
-        pollSCM('H */1 * * *')
     }
 
     stages {
         // Etapa de preparación del ambiente
         stage('Environment Preparation') {
             steps {
-                echo 'Preparing environment...'
-                // Limpiar workspace
-                cleanWs()
-                // Checkout del código
-                checkout scm
-                
-                // Mostrar versiones de herramientas
-                bat 'java -version'
-                bat 'mvn -version'
-                
-                // Copiar archivo de credenciales de Firebase usando withCredentials
-                withCredentials([file(credentialsId: 'firebase-credentials', variable: 'FIREBASE_CONFIG')]) {
-                    powershell '''
-                        Copy-Item $env:FIREBASE_CONFIG -Destination "src/main/resources/firebase-service-account.json" -Force
-                    '''
+                script {
+                    echo 'Preparing environment...'
+                    // Limpiar workspace
+                    cleanWs()
+
+                    // Verificar versiones de herramientas
+                    bat 'java -version'
+                    bat 'mvn -version'
+
+                    // Crear red de Docker si no existe
+                    bat """
+                        docker network inspect ${DOCKER_NETWORK} > nul 2>&1 || docker network create ${DOCKER_NETWORK}
+                    """
                 }
-            }
-        }
-        // Etapa de verificación de dependencias
-        stage('Check Dependencies') {
-            steps {
-                echo 'Checking and downloading dependencies...'
-                bat 'mvn dependency:tree'
             }
         }
 
-        // Etapa de compilación
-        stage('Build') {
+        // Etapa de checkout del código
+        stage('Checkout') {
             steps {
-                echo 'Building application...'
-                // Compilar con encoding específico
-                withEnv(['JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8']) {
-                    bat 'mvn clean package -DskipTests -Dproject.build.sourceEncoding=UTF-8 -Dproject.reporting.outputEncoding=UTF-8'
+                echo 'Checking out code...'
+                // Usar credenciales de GitHub configuradas
+                git branch: 'main',
+                    credentialsId: 'github-credentials',
+                    url: 'https://github.com/skazy12/veterinaria-backend.git'  // Reemplazar con tu URL
+            }
+        }
+
+        // Etapa de configuración de Firebase
+        stage('Setup Firebase Credentials') {
+            steps {
+                script {
+                    echo 'Setting up Firebase credentials...'
+                    // Copiar archivo de credenciales de Firebase de forma segura
+                    withCredentials([file(credentialsId: 'firebase-credentials', variable: 'FIREBASE_CONFIG')]) {
+                        bat """
+                            if not exist "src\\main\\resources" mkdir "src\\main\\resources"
+                            copy /Y "%FIREBASE_CONFIG%" "src\\main\\resources\\firebase-service-account.json"
+                        """
+                    }
                 }
             }
-            post {
-                success {
-                    echo 'Build successful!'
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+        }
+
+        // Etapa de compilación con Maven
+        stage('Build Maven') {
+            steps {
+                echo 'Building application with Maven...'
+                // Compilar con encoding específico
+                withEnv(['JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8']) {
+                    bat 'mvn clean package -DskipTests -Dproject.build.sourceEncoding=UTF-8'
                 }
             }
         }
@@ -88,73 +97,81 @@ pipeline {
         stage('Unit Tests') {
             steps {
                 echo 'Running unit tests...'
-                // Ejecutar pruebas
                 bat 'mvn test'
             }
             post {
                 always {
-                    // Publicar resultados de pruebas
                     junit '**/target/surefire-reports/*.xml'
                 }
             }
         }
 
-        // Etapa de análisis de código
-        stage('Code Analysis') {
+        // Etapa de construcción de imagen Docker
+        stage('Build Docker Image') {
             steps {
-                echo 'Running code analysis...'
-                // Ejecutar análisis
-                bat 'mvn verify'
-                // Si tienes SonarQube configurado:
-                // bat 'mvn sonar:sonar'
-            }
-        }
-
-        // Etapa de pruebas de integración (si las tienes)
-        stage('Integration Tests') {
-            steps {
-                echo 'Running integration tests...'
-                // Ejecutar pruebas de integración
-                bat 'mvn verify -P integration-tests'
-            }
-        }
-
-        // Etapa de generación de documentación
-        stage('Generate Documentation') {
-            steps {
-                echo 'Generating documentation...'
-                bat 'mvn javadoc:javadoc'
-            }
-            post {
-                success {
-                    // Archivar la documentación generada
-                    archiveArtifacts artifacts: 'target/site/apidocs/**', fingerprint: true
+                script {
+                    echo 'Building Docker image...'
+                    // Construir imagen
+                    bat "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                    bat "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
                 }
             }
         }
 
-        // Etapa de despliegue en desarrollo (ajusta según tu entorno)
-        stage('Deploy to Development') {
-            when {
-                branch 'develop'
-            }
+        // Etapa de despliegue del contenedor
+        stage('Deploy Container') {
             steps {
-                echo 'Deploying to development environment...'
-                // Aquí irían tus comandos de despliegue
-                // Ejemplo: bat 'java -jar target/tu-aplicacion.jar'
+                script {
+                    echo 'Deploying container...'
+
+                    // Detener y eliminar contenedor anterior si existe
+                    bat """
+                        docker stop ${CONTAINER_NAME} 2>nul || exit 0
+                        docker rm ${CONTAINER_NAME} 2>nul || exit 0
+                    """
+
+                    // Ejecutar nuevo contenedor
+                    bat """
+                        docker run -d ^
+                            --name ${CONTAINER_NAME} ^
+                            --network ${DOCKER_NETWORK} ^
+                            -p ${HOST_PORT}:${CONTAINER_PORT} ^
+                            -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
+                            -v veterinaria-data:/app/data ^
+                            --restart unless-stopped ^
+                            ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    """
+
+                    // Esperar a que la aplicación esté disponible
+                    bat """
+                        timeout /t 30 /nobreak
+                        echo Checking application health...
+                        for /l %%x in (1, 1, 10) do (
+                            curl -f http://localhost:${HOST_PORT}/actuator/health && exit 0 || timeout /t 5 /nobreak
+                        )
+                    """
+                }
             }
         }
 
-        // Etapa de despliegue en producción
-        stage('Deploy to Production') {
-            when {
-                branch 'main'
-            }
+        // Etapa de verificación post-despliegue
+        stage('Verify Deployment') {
             steps {
-                // Pedir aprobación manual
-                input message: '¿Deseas desplegar a producción?'
-                echo 'Deploying to production environment...'
-                // Aquí irían tus comandos de despliegue a producción
+                script {
+                    echo 'Verifying deployment...'
+
+                    // Verificar estado del contenedor
+                    bat """
+                        docker ps | find "${CONTAINER_NAME}"
+                        if errorlevel 1 (
+                            echo Container not running!
+                            exit 1
+                        )
+                    """
+
+                    // Mostrar logs del contenedor
+                    bat "docker logs ${CONTAINER_NAME}"
+                }
             }
         }
     }
@@ -162,23 +179,47 @@ pipeline {
     // Acciones post-ejecución
     post {
         always {
-            echo 'Pipeline finished execution'
+            echo 'Cleaning up...'
+            // Limpiar archivo de credenciales de Firebase
+            bat 'if exist "src\\main\\resources\\firebase-service-account.json" del /F /Q "src\\main\\resources\\firebase-service-account.json"'
             // Limpiar workspace
             cleanWs()
         }
+
         success {
-            echo 'Pipeline executed successfully!'
-            // Aquí puedes agregar notificaciones de éxito
-            // Por ejemplo, enviar un correo o notificación a Slack
+            echo """
+                =========================================
+                Pipeline executed successfully!
+                Image: ${DOCKER_IMAGE}:${DOCKER_TAG}
+                Container: ${CONTAINER_NAME}
+                Application URL: http://localhost:${HOST_PORT}
+                =========================================
+            """
         }
+
         failure {
-            echo 'Pipeline execution failed!'
-            // Aquí puedes agregar notificaciones de fallo
-            // Por ejemplo, enviar un correo o notificación a Slack
+            echo """
+                =========================================
+                Pipeline failed!
+                Check the logs above for details.
+                Attempting rollback if necessary...
+                =========================================
+            """
+
+            // Intentar rollback a la versión anterior
+            script {
+                bat """
+                    if exist "${CONTAINER_NAME}" (
+                        docker stop ${CONTAINER_NAME}
+                        docker rm ${CONTAINER_NAME}
+                        docker run -d --name ${CONTAINER_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${DOCKER_IMAGE}:latest
+                    )
+                """
+            }
         }
+
         unstable {
-            echo 'Pipeline is unstable!'
-            // Acciones para build inestable
+            echo 'Pipeline is unstable! Check test results.'
         }
     }
 }
