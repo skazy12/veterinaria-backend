@@ -3,8 +3,8 @@ pipeline {
 
     // Definición de herramientas
     tools {
-        maven 'Maven3'  // Debe coincidir con el nombre configurado en Jenkins
-        jdk 'JDK17'     // Debe coincidir con el nombre configurado en Jenkins
+        maven 'Maven3'
+        jdk 'JDK17'
     }
 
     // Variables de entorno
@@ -110,36 +110,55 @@ pipeline {
             steps {
                 script {
                     echo 'Deploying container...'
+                    withCredentials([
+                        string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
+                        string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
+                        string(credentialsId: 'spring-mail-host', variable: 'MAIL_HOST'),
+                        string(credentialsId: 'spring-mail-port', variable: 'MAIL_PORT'),
+                        string(credentialsId: 'spring-mail-username', variable: 'MAIL_USER'),
+                        string(credentialsId: 'spring-mail-password', variable: 'MAIL_PASS'),
+                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                        string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
+                    ]) {
+                        bat """
+                            rem Detener y eliminar contenedor existente
+                            docker container stop ${CONTAINER_NAME} || true
+                            docker container rm ${CONTAINER_NAME} || true
 
-                    bat """
-                        rem Detener y eliminar contenedor existente
-                        docker container stop ${CONTAINER_NAME} || true
-                        docker container rm ${CONTAINER_NAME} || true
+                            rem Esperar que el puerto se libere
+                            timeout /t 10 /nobreak
 
-                        rem Esperar que el puerto se libere
-                        timeout /t 10 /nobreak
+                            rem Verificar y liberar puerto si está en uso
+                            netstat -ano | find "${HOST_PORT}" > nul
+                            if not errorlevel 1 (
+                                echo Puerto ${HOST_PORT} en uso. Intentando liberar...
+                                FOR /F "tokens=5" %%P IN ('netstat -ano ^| find "${HOST_PORT}"') DO TaskKill /PID %%P /F
+                                timeout /t 5 /nobreak
+                            )
 
-                        rem Verificar y liberar puerto si está en uso
-                        netstat -ano | find "${HOST_PORT}" > nul
-                        if not errorlevel 1 (
-                            echo Puerto ${HOST_PORT} en uso. Intentando liberar...
-                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| find "${HOST_PORT}"') DO TaskKill /PID %%P /F
-                            timeout /t 5 /nobreak
-                        )
+                            rem Desplegar nuevo contenedor
+                            docker run -d ^
+                                --name ${CONTAINER_NAME} ^
+                                --network ${DOCKER_NETWORK} ^
+                                -p ${HOST_PORT}:${CONTAINER_PORT} ^
+                                -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
+                                -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
+                                -e FIREBASE_API_KEY=%FIREBASE_API% ^
+                                -e SPRING_MAIL_HOST=%MAIL_HOST% ^
+                                -e SPRING_MAIL_PORT=%MAIL_PORT% ^
+                                -e SPRING_MAIL_USERNAME=%MAIL_USER% ^
+                                -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
+                                -e JWT_SECRET=%JWT_SECRET% ^
+                                -e JWT_EXPIRATION=%JWT_EXP% ^
+                                -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
+                                -v veterinaria-data:/app/data ^
+                                --restart unless-stopped ^
+                                ${DOCKER_IMAGE}:${DOCKER_TAG}
 
-                        rem Desplegar nuevo contenedor
-                        docker run -d ^
-                            --name ${CONTAINER_NAME} ^
-                            --network ${DOCKER_NETWORK} ^
-                            -p ${HOST_PORT}:${CONTAINER_PORT} ^
-                            -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
-                            -v veterinaria-data:/app/data ^
-                            --restart unless-stopped ^
-                            ${DOCKER_IMAGE}:${DOCKER_TAG}
-
-                        rem Esperar que el contenedor esté listo
-                        timeout /t 15 /nobreak
-                    """
+                            rem Esperar que el contenedor esté listo
+                            timeout /t 15 /nobreak
+                        """
+                    }
                 }
             }
         }
@@ -153,6 +172,7 @@ pipeline {
                         rem Verificar que el contenedor está corriendo
                         docker container inspect -f '{{.State.Running}}' ${CONTAINER_NAME} || (
                             echo Container failed to start
+                            docker logs ${CONTAINER_NAME}
                             exit 1
                         )
 
@@ -173,6 +193,7 @@ pipeline {
                                 goto HEALTH_CHECK_LOOP
                             ) else (
                                 echo Health check failed after %HEALTH_CHECK_RETRIES% attempts
+                                docker logs ${CONTAINER_NAME}
                                 exit 1
                             )
                         )
