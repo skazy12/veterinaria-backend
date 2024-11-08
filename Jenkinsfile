@@ -106,66 +106,62 @@ pipeline {
             }
         }
 
-        stage('Deploy Container') {
-            steps {
-                script {
-                    echo 'Deploying container...'
+         stage('Deploy Container') {
+                    steps {
+                        script {
+                            echo 'Deploying container...'
+                            withCredentials([
+                                string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
+                                string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
+                                string(credentialsId: 'spring-mail-host', variable: 'MAIL_HOST'),
+                                string(credentialsId: 'spring-mail-port', variable: 'MAIL_PORT'),
+                                string(credentialsId: 'spring-mail-username', variable: 'MAIL_USER'),
+                                string(credentialsId: 'spring-mail-password', variable: 'MAIL_PASS'),
+                                string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                                string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
+                            ]) {
+                                bat """
+                                    rem Detener y eliminar contenedor existente
+                                    docker container stop ${CONTAINER_NAME} || true
+                                    docker container rm ${CONTAINER_NAME} || true
 
-                    withCredentials([
-                        string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
-                        string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
-                        string(credentialsId: 'spring-mail-host', variable: 'MAIL_HOST'),
-                        string(credentialsId: 'spring-mail-port', variable: 'MAIL_PORT'),
-                        string(credentialsId: 'spring-mail-username', variable: 'MAIL_USER'),
-                        string(credentialsId: 'spring-mail-password', variable: 'MAIL_PASS'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
-                        string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
-                    ]) {
-                        // Todo el proceso en un solo bloque bat
-                        bat '''
-                            @echo off
+                                    rem Esperar que el puerto se libere
+                                    timeout /t 10 /nobreak
 
-                            echo Stopping existing container...
-                            docker container stop veterinaria-app 2>nul || echo Container was not running
-                            docker container rm veterinaria-app 2>nul || echo No container to remove
+                                    rem Verificar y liberar puerto si está en uso
+                                    netstat -ano | find "${HOST_PORT}" > nul
+                                    if not errorlevel 1 (
+                                        echo Puerto ${HOST_PORT} en uso. Intentando liberar...
+                                        FOR /F "tokens=5" %%P IN ('netstat -ano ^| find "${HOST_PORT}"') DO TaskKill /PID %%P /F
+                                        timeout /t 5 /nobreak
+                                    )
 
-                            echo Waiting for cleanup...
-                            powershell Start-Sleep -s 10
+                                    rem Desplegar nuevo contenedor
+                                    docker run -d ^
+                                        --name ${CONTAINER_NAME} ^
+                                        --network ${DOCKER_NETWORK} ^
+                                        -p ${HOST_PORT}:${CONTAINER_PORT} ^
+                                        -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
+                                        -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
+                                        -e FIREBASE_API_KEY=%FIREBASE_API% ^
+                                        -e SPRING_MAIL_HOST=%MAIL_HOST% ^
+                                        -e SPRING_MAIL_PORT=%MAIL_PORT% ^
+                                        -e SPRING_MAIL_USERNAME=%MAIL_USER% ^
+                                        -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
+                                        -e JWT_SECRET=%JWT_SECRET% ^
+                                        -e JWT_EXPIRATION=%JWT_EXP% ^
+                                        -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
+                                        -v veterinaria-data:/app/data ^
+                                        --restart unless-stopped ^
+                                        ${DOCKER_IMAGE}:${DOCKER_TAG}
 
-                            echo Starting new container...
-                            docker run -d ^
-                                --name veterinaria-app ^
-                                --network veterinaria-network ^
-                                -p 8091:8080 ^
-                                -e SPRING_PROFILES_ACTIVE=prod ^
-                                -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
-                                -e FIREBASE_API_KEY=%FIREBASE_API% ^
-                                -e SPRING_MAIL_HOST=%MAIL_HOST% ^
-                                -e SPRING_MAIL_PORT=%MAIL_PORT% ^
-                                -e SPRING_MAIL_USERNAME=%MAIL_USER% ^
-                                -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
-                                -e JWT_SECRET=%JWT_SECRET% ^
-                                -e JWT_EXPIRATION=%JWT_EXP% ^
-                                -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
-                                -v veterinaria-data:/app/data ^
-                                --restart unless-stopped ^
-                                veterinaria-backend:%BUILD_NUMBER%
-
-                            echo Waiting for container startup...
-                            powershell Start-Sleep -s 20
-
-                            echo Checking container status...
-                            docker ps | findstr "veterinaria-app" || (
-                                echo Container not running, checking logs...
-                                docker logs veterinaria-app
-                                exit /b 1
-                            )
-                        '''
+                                    rem Esperar que el contenedor esté listo
+                                    timeout /t 15 /nobreak
+                                """
+                            }
+                        }
                     }
-                }
-            }
-        }
-
+         }
     }
 
     post {
