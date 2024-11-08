@@ -121,21 +121,23 @@ pipeline {
                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
-                        // Usar bloques de comandos separados para mejor control
-                        bat 'echo Stopping existing container...'
-                        bat "docker container stop ${CONTAINER_NAME} 2>nul || echo Container was not running"
-                        bat "docker container rm ${CONTAINER_NAME} 2>nul || echo No container to remove"
+                        // Todo el proceso en un solo bloque bat
+                        bat '''
+                            @echo off
 
-                        bat 'echo Waiting for cleanup...'
-                        bat 'powershell Start-Sleep -s 10'
+                            echo Stopping existing container...
+                            docker container stop veterinaria-app 2>nul || echo Container was not running
+                            docker container rm veterinaria-app 2>nul || echo No container to remove
 
-                        bat 'echo Starting new container...'
-                        bat """
+                            echo Waiting for cleanup...
+                            powershell Start-Sleep -s 10
+
+                            echo Starting new container...
                             docker run -d ^
-                                --name ${CONTAINER_NAME} ^
-                                --network ${DOCKER_NETWORK} ^
-                                -p ${HOST_PORT}:${CONTAINER_PORT} ^
-                                -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
+                                --name veterinaria-app ^
+                                --network veterinaria-network ^
+                                -p 8091:8080 ^
+                                -e SPRING_PROFILES_ACTIVE=prod ^
                                 -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
                                 -e FIREBASE_API_KEY=%FIREBASE_API% ^
                                 -e SPRING_MAIL_HOST=%MAIL_HOST% ^
@@ -147,21 +149,18 @@ pipeline {
                                 -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
-                                ${DOCKER_IMAGE}:${DOCKER_TAG}
-                        """
+                                veterinaria-backend:%BUILD_NUMBER%
 
-                        bat 'echo Waiting for container startup...'
-                        bat 'powershell Start-Sleep -s 20'
+                            echo Waiting for container startup...
+                            powershell Start-Sleep -s 20
 
-                        bat 'echo Checking container status...'
-                        bat """
-                            docker ps | findstr "${CONTAINER_NAME}" || (
-                                echo Container not found in running containers
-                                echo Full container logs:
-                                docker logs ${CONTAINER_NAME}
-                                exit 1
+                            echo Checking container status...
+                            docker ps | findstr "veterinaria-app" || (
+                                echo Container not running, checking logs...
+                                docker logs veterinaria-app
+                                exit /b 1
                             )
-                        """
+                        '''
                     }
                 }
             }
