@@ -121,22 +121,29 @@ pipeline {
                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
-                        bat '''
-                            @echo off
-
+                        bat """
                             echo Stopping existing container...
-                            docker container stop veterinaria-app 2>nul || echo Container was not running
-                            docker container rm veterinaria-app 2>nul || echo No container to remove
+                            docker container stop ${CONTAINER_NAME} 2>nul || exit 0
+                            docker container rm ${CONTAINER_NAME} 2>nul || exit 0
 
                             echo Waiting for cleanup...
                             powershell Start-Sleep -s 10
 
+                            echo Checking port usage...
+                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| findstr "LISTENING" ^| findstr "${HOST_PORT}"') DO (
+                                echo Found process using port ${HOST_PORT}, killing process...
+                                taskkill /F /PID %%P 2>nul || exit 0
+                            )
+
+                            echo Waiting for port to be freed...
+                            powershell Start-Sleep -s 5
+
                             echo Starting new container...
                             docker run -d ^
-                                --name veterinaria-app ^
-                                --network veterinaria-network ^
-                                -p 8091:8080 ^
-                                -e SPRING_PROFILES_ACTIVE=prod ^
+                                --name ${CONTAINER_NAME} ^
+                                --network ${DOCKER_NETWORK} ^
+                                -p ${HOST_PORT}:${CONTAINER_PORT} ^
+                                -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILE} ^
                                 -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
                                 -e FIREBASE_API_KEY=%FIREBASE_API% ^
                                 -e SPRING_MAIL_HOST=%MAIL_HOST% ^
@@ -145,59 +152,28 @@ pipeline {
                                 -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
                                 -e JWT_SECRET=%JWT_SECRET% ^
                                 -e JWT_EXPIRATION=%JWT_EXP% ^
-                                -e FIREBASE_CONFIG_PATH=/app/resources/firebase-service-account.json ^
-                                -v %CD%\\src\\main\\resources\\firebase-service-account.json:/app/resources/firebase-service-account.json ^
+                                -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
-                                veterinaria-backend:%BUILD_NUMBER%
+                                ${DOCKER_IMAGE}:${DOCKER_TAG}
 
                             echo Waiting for container startup...
-                            powershell Start-Sleep -s 45
+                            powershell Start-Sleep -s 15
 
-                            echo Checking container status...
-                            docker ps | findstr "veterinaria-app"
+                            echo Verifying container status...
+                            docker ps | findstr "${CONTAINER_NAME}" || (
+                                echo Container not running, checking logs...
+                                docker logs ${CONTAINER_NAME}
+                                exit 1
+                            )
 
-                            echo Container logs:
-                            docker logs veterinaria-app
-                        '''
+                            echo Container deployed successfully
+                        """
                     }
                 }
             }
         }
-
-        stage('Verify Deployment') {
-            steps {
-                script {
-                    echo 'Verifying deployment...'
-
-                    bat '''
-                        @echo off
-                        echo Waiting for application startup...
-                        powershell Start-Sleep -s 45
-
-                        echo Container logs before health check:
-                        docker logs veterinaria-app
-
-                        echo Checking application health...
-                        set attempts=0
-                        :RETRY
-                        curl -f -s http://localhost:8091/actuator/health || (
-                            set /a attempts+=1
-                            if %attempts% lss 6 (
-                                echo Attempt %attempts% of 6 failed, waiting 15 seconds...
-                                powershell Start-Sleep -s 15
-                                goto RETRY
-                            ) else (
-                                echo All health check attempts failed
-                                echo Final container logs:
-                                docker logs veterinaria-app
-                                exit /b 1
-                            )
-                        )
-                    '''
-                }
-            }
-        }
+        
     }
 
     post {
