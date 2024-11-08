@@ -121,24 +121,16 @@ pipeline {
                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
+                        // Usar bloques de comandos separados para mejor control
+                        bat 'echo Stopping existing container...'
+                        bat "docker container stop ${CONTAINER_NAME} 2>nul || echo Container was not running"
+                        bat "docker container rm ${CONTAINER_NAME} 2>nul || echo No container to remove"
+
+                        bat 'echo Waiting for cleanup...'
+                        bat 'powershell Start-Sleep -s 10'
+
+                        bat 'echo Starting new container...'
                         bat """
-                            echo Stopping existing container...
-                            docker container stop ${CONTAINER_NAME} 2>nul || exit 0
-                            docker container rm ${CONTAINER_NAME} 2>nul || exit 0
-
-                            echo Waiting for cleanup...
-                            powershell Start-Sleep -s 10
-
-                            echo Checking port usage...
-                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| findstr "LISTENING" ^| findstr "${HOST_PORT}"') DO (
-                                echo Found process using port ${HOST_PORT}, killing process...
-                                taskkill /F /PID %%P 2>nul || exit 0
-                            )
-
-                            echo Waiting for port to be freed...
-                            powershell Start-Sleep -s 5
-
-                            echo Starting new container...
                             docker run -d ^
                                 --name ${CONTAINER_NAME} ^
                                 --network ${DOCKER_NETWORK} ^
@@ -156,24 +148,25 @@ pipeline {
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
                                 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        """
 
-                            echo Waiting for container startup...
-                            powershell Start-Sleep -s 15
+                        bat 'echo Waiting for container startup...'
+                        bat 'powershell Start-Sleep -s 20'
 
-                            echo Verifying container status...
+                        bat 'echo Checking container status...'
+                        bat """
                             docker ps | findstr "${CONTAINER_NAME}" || (
-                                echo Container not running, checking logs...
+                                echo Container not found in running containers
+                                echo Full container logs:
                                 docker logs ${CONTAINER_NAME}
                                 exit 1
                             )
-
-                            echo Container deployed successfully
                         """
                     }
                 }
             }
         }
-        
+
     }
 
     post {
