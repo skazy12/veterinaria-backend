@@ -121,7 +121,6 @@ pipeline {
                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
-                        // Todo el proceso en un solo bloque bat
                         bat '''
                             @echo off
 
@@ -146,20 +145,19 @@ pipeline {
                                 -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
                                 -e JWT_SECRET=%JWT_SECRET% ^
                                 -e JWT_EXPIRATION=%JWT_EXP% ^
-                                -e FIREBASE_CONFIG_PATH=/app/firebase-service-account.json ^
+                                -e FIREBASE_CONFIG_PATH=/app/BOOT-INF/classes/firebase-service-account.json ^
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
                                 veterinaria-backend:%BUILD_NUMBER%
 
                             echo Waiting for container startup...
-                            powershell Start-Sleep -s 20
+                            powershell Start-Sleep -s 45
 
                             echo Checking container status...
-                            docker ps | findstr "veterinaria-app" || (
-                                echo Container not running, checking logs...
-                                docker logs veterinaria-app
-                                exit /b 1
-                            )
+                            docker ps | findstr "veterinaria-app"
+
+                            echo Container logs:
+                            docker logs veterinaria-app
                         '''
                     }
                 }
@@ -174,26 +172,23 @@ pipeline {
                     bat '''
                         @echo off
                         echo Waiting for application startup...
-                        powershell Start-Sleep -s 30
+                        powershell Start-Sleep -s 45
 
-                        echo Checking container status...
-                        docker ps | findstr "veterinaria-app"
+                        echo Container logs before health check:
+                        docker logs veterinaria-app
 
                         echo Checking application health...
                         set attempts=0
                         :RETRY
-                        curl -f http://localhost:8091/actuator/health
-                        if %ERRORLEVEL% equ 0 (
-                            echo Health check passed
-                            exit /b 0
-                        ) else (
+                        curl -f -s http://localhost:8091/actuator/health || (
                             set /a attempts+=1
                             if %attempts% lss 6 (
-                                echo Attempt %attempts% of 6 failed, retrying...
-                                powershell Start-Sleep -s 10
+                                echo Attempt %attempts% of 6 failed, waiting 15 seconds...
+                                powershell Start-Sleep -s 15
                                 goto RETRY
                             ) else (
                                 echo All health check attempts failed
+                                echo Final container logs:
                                 docker logs veterinaria-app
                                 exit /b 1
                             )
