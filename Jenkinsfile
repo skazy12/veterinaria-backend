@@ -121,24 +121,16 @@ pipeline {
                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
+                        // Usar bloques de comandos separados para mejor control
+                        bat 'echo Stopping existing container...'
+                        bat "docker container stop ${CONTAINER_NAME} 2>nul || echo Container was not running"
+                        bat "docker container rm ${CONTAINER_NAME} 2>nul || echo No container to remove"
+
+                        bat 'echo Waiting for cleanup...'
+                        bat 'powershell Start-Sleep -s 10'
+
+                        bat 'echo Starting new container...'
                         bat """
-                            echo Stopping existing container...
-                            docker container stop ${CONTAINER_NAME} 2>nul || exit 0
-                            docker container rm ${CONTAINER_NAME} 2>nul || exit 0
-
-                            echo Waiting for cleanup...
-                            powershell Start-Sleep -s 10
-
-                            echo Checking port usage...
-                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| findstr "LISTENING" ^| findstr "${HOST_PORT}"') DO (
-                                echo Found process using port ${HOST_PORT}, killing process...
-                                taskkill /F /PID %%P 2>nul || exit 0
-                            )
-
-                            echo Waiting for port to be freed...
-                            powershell Start-Sleep -s 5
-
-                            echo Starting new container...
                             docker run -d ^
                                 --name ${CONTAINER_NAME} ^
                                 --network ${DOCKER_NETWORK} ^
@@ -156,18 +148,19 @@ pipeline {
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
                                 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        """
 
-                            echo Waiting for container startup...
-                            powershell Start-Sleep -s 15
+                        bat 'echo Waiting for container startup...'
+                        bat 'powershell Start-Sleep -s 20'
 
-                            echo Verifying container status...
+                        bat 'echo Checking container status...'
+                        bat """
                             docker ps | findstr "${CONTAINER_NAME}" || (
-                                echo Container not running, checking logs...
+                                echo Container not found in running containers
+                                echo Full container logs:
                                 docker logs ${CONTAINER_NAME}
                                 exit 1
                             )
-
-                            echo Container deployed successfully
                         """
                     }
                 }
@@ -179,31 +172,36 @@ pipeline {
                 script {
                     echo 'Verifying deployment...'
 
-                    bat """
-                        rem Verificar que el contenedor está corriendo
-                        docker container inspect -f '{{.State.Running}}' ${CONTAINER_NAME} || (
-                            echo Container failed to start
-                            docker logs ${CONTAINER_NAME}
-                            exit 1
-                        )
+                    // Esperar un poco más antes de verificar
+                    bat 'powershell Start-Sleep -s 20'
 
-                        rem Mostrar logs del contenedor
+                    bat """
+                        echo Checking container status...
+                        docker ps | findstr "${CONTAINER_NAME}"
+
+                        echo Container logs:
                         docker logs ${CONTAINER_NAME}
 
-                        rem Verificar que el puerto está respondiendo
-                        timeout /t 5 /nobreak
+                        echo Waiting for application to start...
+                        powershell Start-Sleep -s 10
 
-                        rem Intentar health check múltiples veces
+                        echo Performing health check...
                         set /a attempts=0
                         :HEALTH_CHECK_LOOP
                         curl -f http://localhost:${HOST_PORT}/actuator/health
-                        if errorlevel 1 (
+                        if %ERRORLEVEL% equ 0 (
+                            echo Health check passed successfully
+                            exit 0
+                        ) else (
                             set /a attempts+=1
-                            if %attempts% lss %HEALTH_CHECK_RETRIES% (
-                                timeout /t %HEALTH_CHECK_INTERVAL% /nobreak
+                            if %attempts% lss ${HEALTH_CHECK_RETRIES} (
+                                echo Attempt %attempts% of ${HEALTH_CHECK_RETRIES} failed
+                                echo Waiting before retry...
+                                powershell Start-Sleep -s 10
                                 goto HEALTH_CHECK_LOOP
                             ) else (
-                                echo Health check failed after %HEALTH_CHECK_RETRIES% attempts
+                                echo Health check failed after all attempts
+                                echo Container logs:
                                 docker logs ${CONTAINER_NAME}
                                 exit 1
                             )
