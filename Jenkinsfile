@@ -110,6 +110,7 @@ pipeline {
             steps {
                 script {
                     echo 'Deploying container...'
+
                     withCredentials([
                         string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
                         string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
@@ -121,22 +122,23 @@ pipeline {
                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
                     ]) {
                         bat """
-                            rem Detener y eliminar contenedor existente
-                            docker container stop ${CONTAINER_NAME} || true
-                            docker container rm ${CONTAINER_NAME} || true
+                            echo Stopping existing container...
+                            docker container stop ${CONTAINER_NAME} 2>nul || exit 0
+                            docker container rm ${CONTAINER_NAME} 2>nul || exit 0
 
-                            rem Esperar que el puerto se libere
-                            timeout /t 10 /nobreak
+                            echo Waiting for cleanup...
+                            powershell Start-Sleep -s 10
 
-                            rem Verificar y liberar puerto si está en uso
-                            netstat -ano | find "${HOST_PORT}" > nul
-                            if not errorlevel 1 (
-                                echo Puerto ${HOST_PORT} en uso. Intentando liberar...
-                                FOR /F "tokens=5" %%P IN ('netstat -ano ^| find "${HOST_PORT}"') DO TaskKill /PID %%P /F
-                                timeout /t 5 /nobreak
+                            echo Checking port usage...
+                            FOR /F "tokens=5" %%P IN ('netstat -ano ^| findstr "LISTENING" ^| findstr "${HOST_PORT}"') DO (
+                                echo Found process using port ${HOST_PORT}, killing process...
+                                taskkill /F /PID %%P 2>nul || exit 0
                             )
 
-                            rem Desplegar nuevo contenedor
+                            echo Waiting for port to be freed...
+                            powershell Start-Sleep -s 5
+
+                            echo Starting new container...
                             docker run -d ^
                                 --name ${CONTAINER_NAME} ^
                                 --network ${DOCKER_NETWORK} ^
@@ -155,8 +157,17 @@ pipeline {
                                 --restart unless-stopped ^
                                 ${DOCKER_IMAGE}:${DOCKER_TAG}
 
-                            rem Esperar que el contenedor esté listo
-                            timeout /t 15 /nobreak
+                            echo Waiting for container startup...
+                            powershell Start-Sleep -s 15
+
+                            echo Verifying container status...
+                            docker ps | findstr "${CONTAINER_NAME}" || (
+                                echo Container not running, checking logs...
+                                docker logs ${CONTAINER_NAME}
+                                exit 1
+                            )
+
+                            echo Container deployed successfully
                         """
                     }
                 }
