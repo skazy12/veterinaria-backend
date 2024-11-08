@@ -145,7 +145,8 @@ pipeline {
                                 -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
                                 -e JWT_SECRET=%JWT_SECRET% ^
                                 -e JWT_EXPIRATION=%JWT_EXP% ^
-                                -e FIREBASE_CONFIG_PATH=/app/BOOT-INF/classes/firebase-service-account.json ^
+                                -e FIREBASE_CONFIG_PATH=/app/resources/firebase-service-account.json ^
+                                -v %CD%\\src\\main\\resources\\firebase-service-account.json:/app/resources/firebase-service-account.json ^
                                 -v veterinaria-data:/app/data ^
                                 --restart unless-stopped ^
                                 veterinaria-backend:%BUILD_NUMBER%
