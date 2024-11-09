@@ -153,13 +153,14 @@ pipeline {
                                -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
                                -e JWT_SECRET=%JWT_SECRET% ^
                                -e JWT_EXPIRATION=%JWT_EXP% ^
+                               -e FIREBASE_CONFIG_PATH=firebase-service-account.json ^
                                -v veterinaria-data:/app/data ^
                                --restart unless-stopped ^
                                %DOCKER_IMAGE%:%DOCKER_TAG%
 
                            ping -n 15 127.0.0.1 >nul
 
-                           docker logs %CONTAINER_NAME%
+
                        """
                    }
                }

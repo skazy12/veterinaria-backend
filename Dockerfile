@@ -14,12 +14,12 @@ COPY --from=builder app/spring-boot-loader/ ./
 COPY --from=builder app/snapshot-dependencies/ ./
 COPY --from=builder app/application/ ./
 
-# Crear directorio para recursos
-RUN mkdir -p /app/BOOT-INF/classes
-COPY src/main/resources/firebase-service-account.json /app/BOOT-INF/classes/
+# Copiar el archivo de Firebase
+COPY src/main/resources/firebase-service-account.json ./firebase-service-account.json
+RUN chmod 644 ./firebase-service-account.json
 
-# Dar permisos apropiados
-RUN chmod 644 /app/BOOT-INF/classes/firebase-service-account.json
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV FIREBASE_CONFIG_PATH=firebase-service-account.json
 
 EXPOSE 8080
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
