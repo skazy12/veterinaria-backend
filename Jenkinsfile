@@ -67,8 +67,16 @@ pipeline {
                     echo 'Setting up Firebase credentials...'
                     withCredentials([file(credentialsId: 'firebase-credentials', variable: 'FIREBASE_CONFIG')]) {
                         bat """
+                            @echo off
                             if not exist "src\\main\\resources" mkdir "src\\main\\resources"
                             copy /Y "%FIREBASE_CONFIG%" "src\\main\\resources\\firebase-service-account.json"
+
+                            if not exist "src\\main\\resources\\firebase-service-account.json" (
+                                echo Error: Firebase credentials file not copied correctly
+                                exit /b 1
+                            ) else (
+                                echo Firebase credentials file copied successfully
+                            )
                         """
                     }
                 }
@@ -106,69 +114,57 @@ pipeline {
             }
         }
 
-         stage('Deploy Container') {
-             steps {
-                 script {
-                     echo 'Deploying container...'
-                     withCredentials([
-                         string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
-                         string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
-                         string(credentialsId: 'spring-mail-host', variable: 'MAIL_HOST'),
-                         string(credentialsId: 'spring-mail-port', variable: 'MAIL_PORT'),
-                         string(credentialsId: 'spring-mail-username', variable: 'MAIL_USER'),
-                         string(credentialsId: 'spring-mail-password', variable: 'MAIL_PASS'),
-                         string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
-                         string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
-                     ]) {
-                    bat """
-                     @echo off
+       stage('Deploy Container') {
+           steps {
+               script {
+                   echo 'Deploying container...'
+                   withCredentials([
+                       string(credentialsId: 'firebase-database-url', variable: 'FIREBASE_DB_URL'),
+                       string(credentialsId: 'firebase-api-key', variable: 'FIREBASE_API'),
+                       string(credentialsId: 'spring-mail-host', variable: 'MAIL_HOST'),
+                       string(credentialsId: 'spring-mail-port', variable: 'MAIL_PORT'),
+                       string(credentialsId: 'spring-mail-username', variable: 'MAIL_USER'),
+                       string(credentialsId: 'spring-mail-password', variable: 'MAIL_PASS'),
+                       string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                       string(credentialsId: 'jwt-expiration', variable: 'JWT_EXP')
+                   ]) {
+                       bat """
+                           @echo off
 
-                     rem Detener contenedor existente si existe
-                     docker container inspect %CONTAINER_NAME% >nul 2>&1
-                     if not errorlevel 1 (
-                         docker container stop %CONTAINER_NAME% >nul 2>&1
-                         docker container rm %CONTAINER_NAME% >nul 2>&1
-                     )
+                           rem Detener contenedor existente si existe
+                           docker container inspect %CONTAINER_NAME% >nul 2>&1
+                           if not errorlevel 1 (
+                               docker container stop %CONTAINER_NAME% >nul 2>&1
+                               docker container rm %CONTAINER_NAME% >nul 2>&1
+                           )
 
-                     rem Esperar brevemente
-                     ping -n 10 127.0.0.1 >nul
+                           ping -n 10 127.0.0.1 >nul
 
-                     rem Desplegar nuevo contenedor
-                     docker run -d ^
-                         --name %CONTAINER_NAME% ^
-                         --network %DOCKER_NETWORK% ^
-                         -p %HOST_PORT%:%CONTAINER_PORT% ^
-                         -e SPRING_PROFILES_ACTIVE=%SPRING_PROFILE% ^
-                         -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
-                         -e FIREBASE_API_KEY=%FIREBASE_API% ^
-                         -e SPRING_MAIL_HOST=%MAIL_HOST% ^
-                         -e SPRING_MAIL_PORT=%MAIL_PORT% ^
-                         -e SPRING_MAIL_USERNAME=%MAIL_USER% ^
-                         -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
-                         -e JWT_SECRET=%JWT_SECRET% ^
-                         -e JWT_EXPIRATION=%JWT_EXP% ^
-                         -e FIREBASE_CONFIG_PATH=/app/config/firebase-service-account.json ^
-                         -v veterinaria-data:/app/data ^
-                         --restart unless-stopped ^
-                         %DOCKER_IMAGE%:%DOCKER_TAG%
+                           docker run -d ^
+                               --name %CONTAINER_NAME% ^
+                               --network %DOCKER_NETWORK% ^
+                               -p %HOST_PORT%:%CONTAINER_PORT% ^
+                               -e SPRING_PROFILES_ACTIVE=%SPRING_PROFILE% ^
+                               -e FIREBASE_DATABASE_URL=%FIREBASE_DB_URL% ^
+                               -e FIREBASE_API_KEY=%FIREBASE_API% ^
+                               -e SPRING_MAIL_HOST=%MAIL_HOST% ^
+                               -e SPRING_MAIL_PORT=%MAIL_PORT% ^
+                               -e SPRING_MAIL_USERNAME=%MAIL_USER% ^
+                               -e SPRING_MAIL_PASSWORD=%MAIL_PASS% ^
+                               -e JWT_SECRET=%JWT_SECRET% ^
+                               -e JWT_EXPIRATION=%JWT_EXP% ^
+                               -v veterinaria-data:/app/data ^
+                               --restart unless-stopped ^
+                               %DOCKER_IMAGE%:%DOCKER_TAG%
 
-                     rem Esperar que el contenedor esté listo
-                     ping -n 15 127.0.0.1 >nul
+                           ping -n 15 127.0.0.1 >nul
 
-                     rem Verificar que el contenedor está corriendo
-                     docker container inspect -f {{.State.Running}} %CONTAINER_NAME% >nul 2>&1
-                     if errorlevel 1 (
-                         echo Container failed to start
-                         exit /b 1
-                     )
-
-                     echo Deployment successful!
-                     exit /b 0
-                 """
-                     }
-                 }
-             }
-         }
+                           docker logs %CONTAINER_NAME%
+                       """
+                   }
+               }
+           }
+       }
     }
 
     post {
