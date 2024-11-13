@@ -20,4 +20,5 @@ public class ServiceVeterinary {
     private boolean isActive;
     private Date createdAt;
     private Date updatedAt;
+    private ServiceCategory category;
 }
