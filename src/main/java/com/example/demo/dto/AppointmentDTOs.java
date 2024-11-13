@@ -2,6 +2,7 @@ package com.example.demo.dto;
 
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.util.Date;
@@ -63,6 +64,20 @@ public class AppointmentDTOs {
         @NotNull(message = "La nueva fecha es obligatoria")
         private Date newDate;
         private String reason;
+    }
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class ClientPetAppointmentDTO {
+        private String id;
+        private Date appointmentDate;
+        private String reason;
+        private String status;
+        private String veterinarianName;
+        private PetDTOs.PetResponse pet;
+        private boolean canCancel;    // Para indicar si la cita puede ser cancelada
+        private boolean canReschedule; // Para indicar si la cita puede ser reprogramada
     }
 
 }

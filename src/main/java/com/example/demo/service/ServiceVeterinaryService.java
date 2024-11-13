@@ -83,6 +83,9 @@ public class ServiceVeterinaryService {
                     .isActive(true)
                     .createdAt(new Date())
                     .updatedAt(new Date())
+                    .recommendations(request.getRecommendations())
+                    .warnings(request.getWarnings())
+                    .requirements(request.getRequirements())
                     .build();
 
             // Guardar en Firestore
@@ -120,6 +123,9 @@ public class ServiceVeterinaryService {
             service.setPrice(request.getPrice());
             service.setDurationMinutes(request.getDurationMinutes());
             service.setUpdatedAt(new Date());
+            service.setRecommendations(request.getRecommendations());
+            service.setWarnings(request.getWarnings());
+            service.setRequirements(request.getRequirements());
 
             // Guardar cambios
             firestore.collection("veterinary_services")
