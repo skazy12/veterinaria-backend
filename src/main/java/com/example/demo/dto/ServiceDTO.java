@@ -18,4 +18,5 @@ public class ServiceDTO {
     private String description;
     private double price;
     private boolean isActive;
+
 }

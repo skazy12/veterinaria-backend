@@ -231,6 +231,64 @@ public class ServiceVeterinaryService {
         }
     }
 
+    public ServiceDetailResponse getServiceDetails(String id) {
+        try {
+            DocumentSnapshot doc = firestore.collection("veterinary_services")
+                    .document(id)
+                    .get()
+                    .get();
+
+            if (!doc.exists()) {
+                throw new CustomExceptions.NotFoundException("Servicio no encontrado");
+            }
+
+            ServiceVeterinary service = doc.toObject(ServiceVeterinary.class);
+            return convertToServiceDetailResponse(service);
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException(
+                    "Error obteniendo detalles del servicio: " + e.getMessage());
+        }
+    }
+    /**
+     * Obtiene la lista de servicios activos con sus detalles completos
+     * @return Lista de servicios activos
+     */
+    public List<ServiceDetailResponse> getActiveServices() {
+        try {
+            QuerySnapshot snapshot = firestore.collection("veterinary_services")
+                    .whereEqualTo("active", true)
+                    .orderBy("name")
+                    .get()
+                    .get();
+
+            return snapshot.getDocuments().stream()
+                    .map(doc -> doc.toObject(ServiceVeterinary.class))
+                    .map(this::convertToServiceDetailResponse)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException(
+                    "Error obteniendo servicios activos: " + e.getMessage());
+        }
+    }
+    private ServiceDetailResponse convertToServiceDetailResponse(ServiceVeterinary service) {
+        if (service == null) return null;
+
+        return ServiceDetailResponse.builder()
+                .id(service.getId())
+                .name(service.getName())
+                .description(service.getDescription())
+                .price(service.getPrice())
+                .durationMinutes(service.getDurationMinutes())
+                .requirements(service.getRequirements())
+                .recommendations(service.getRecommendations())
+                .warnings(service.getWarnings())
+                .isActive(service.isActive())
+                .createdAt(service.getCreatedAt())
+                .updatedAt(service.getUpdatedAt())
+                .build();
+    }
+
+
     /**
      * Convierte un ServiceVeterinary a ServiceResponse
      */

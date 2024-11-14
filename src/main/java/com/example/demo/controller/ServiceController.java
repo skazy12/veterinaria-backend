@@ -5,6 +5,7 @@ import com.example.demo.model.ServiceCategory;
 import com.example.demo.service.VetServiceListService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,6 +19,7 @@ public class ServiceController {
      * Obtiene la lista de servicios, opcionalmente filtrada y paginada
      */
     @GetMapping("/list")
+    @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
     public ResponseEntity<ApiResponse<PaginatedResponse<ServiceDTO>>> getServiceList(
             @ModelAttribute PaginationRequest paginationRequest,
             @RequestParam(required = false) String searchTerm,
@@ -37,6 +39,7 @@ public class ServiceController {
      * Obtiene la lista de servicios agrupados por categoría
      */
     @GetMapping("/by-category")
+    @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
     public ResponseEntity<ApiResponse<ServiceListResponse>> getServicesByCategory(
             @RequestParam(required = false) String searchTerm) {
 
@@ -53,6 +56,7 @@ public class ServiceController {
      * Obtiene todas las categorías de servicios disponibles
      */
     @GetMapping("/categories")
+    @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
     public ResponseEntity<ApiResponse<ServiceCategory[]>> getServiceCategories() {
         return ResponseEntity.ok(ApiResponse.success(ServiceCategory.values()));
     }

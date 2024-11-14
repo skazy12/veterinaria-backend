@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.*;
 // controller/ClientAppointmentController.java
 @RestController
 @RequestMapping("/api/client/appointments")
-@PreAuthorize("hasRole('CLIENTE')")
 public class ClientAppointmentController {
 
     @Autowired
@@ -22,6 +21,7 @@ public class ClientAppointmentController {
 
     // Obtener todas las citas del cliente actual
     @GetMapping
+    @PreAuthorize("hasPermission(null, 'VER_CITAS_DE_MASCOTAS_MIAS')")
     public ResponseEntity<ApiResponse<PaginatedResponse<AppointmentDTOs.ClientPetAppointmentDTO>>> getMyAppointments(
             @ModelAttribute PaginationRequest request) {
         return ResponseEntity.ok(ApiResponse.success(
@@ -30,6 +30,7 @@ public class ClientAppointmentController {
 
     // Cancelar una cita
     @PostMapping("/{appointmentId}/cancel")
+    @PreAuthorize("hasPermission(null, 'CANCELAR_MI_CITA')")
     public ResponseEntity<ApiResponse<AppointmentDTOs.ClientPetAppointmentDTO>> cancelAppointment(
             @PathVariable String appointmentId) {
         return ResponseEntity.ok(ApiResponse.success(
@@ -38,6 +39,7 @@ public class ClientAppointmentController {
 
     // Reprogramar una cita
     @PostMapping("/{appointmentId}/reschedule")
+    @PreAuthorize("hasPermission(null, 'REPROGRAMAR_MI_CITA')")
     public ResponseEntity<ApiResponse<AppointmentDTOs.ClientPetAppointmentDTO>> rescheduleAppointment(
             @PathVariable String appointmentId,
             @Valid @RequestBody AppointmentDTOs.RescheduleRequest request) {

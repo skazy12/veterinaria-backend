@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/services")
 public class ServiceVeterinaryController {
@@ -65,5 +67,20 @@ public class ServiceVeterinaryController {
             @PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(
                 serviceVeterinaryService.toggleServiceStatus(id)));
+    }
+
+    @GetMapping("/{id}/details")
+    @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
+    public ResponseEntity<ApiResponse<ServiceDetailResponse>> getServiceDetails(
+            @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                serviceVeterinaryService.getServiceDetails(id)));
+    }
+
+    @GetMapping("/active")
+    @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
+    public ResponseEntity<ApiResponse<List<ServiceDetailResponse>>> getActiveServices() {
+        return ResponseEntity.ok(ApiResponse.success(
+                serviceVeterinaryService.getActiveServices()));
     }
 }
