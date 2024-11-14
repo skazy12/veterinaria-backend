@@ -4,6 +4,7 @@ import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.PaginatedResponse;
 import com.example.demo.dto.PaginationRequest;
 import com.example.demo.dto.ServiceVeterinaryDTOs.*;
+import com.example.demo.model.ServiceCategory;
 import com.example.demo.service.ServiceVeterinaryService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +22,15 @@ public class ServiceVeterinaryController {
     @GetMapping
     @PreAuthorize("hasPermission('', 'VER_SERVICIOS')")
     public ResponseEntity<ApiResponse<PaginatedResponse<ServiceResponse>>> getAllServices(
-            @ModelAttribute PaginationRequest paginationRequest) {
+            @ModelAttribute PaginationRequest paginationRequest,
+            @RequestParam(required = false) ServiceCategory category) {
+
+        // Si se proporciona una categoría, configurar el filtro
+        if (category != null) {
+            paginationRequest.setFilterBy("category");
+            paginationRequest.setFilterValue(category.name());
+        }
+
         return ResponseEntity.ok(ApiResponse.success(
                 serviceVeterinaryService.getAllServices(paginationRequest)));
     }

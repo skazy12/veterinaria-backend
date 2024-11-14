@@ -7,5 +7,6 @@ import lombok.Getter;
 public enum Role {
     VETERINARIO,
     CLIENTE,
-    RECEPCIONISTA
+    RECEPCIONISTA,
+    ADMINISTRADOR
 }

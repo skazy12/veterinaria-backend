@@ -4,6 +4,7 @@ import com.example.demo.dto.PaginatedResponse;
 import com.example.demo.dto.PaginationRequest;
 import com.example.demo.dto.ServiceVeterinaryDTOs.*;
 import com.example.demo.exception.CustomExceptions;
+import com.example.demo.model.ServiceCategory;
 import com.example.demo.model.ServiceVeterinary;
 import com.google.cloud.firestore.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,16 +33,27 @@ public class ServiceVeterinaryService {
 
             // Aplicar filtros si existen
             if (request.getFilterBy() != null && request.getFilterValue() != null) {
-                query = query.whereEqualTo(request.getFilterBy(), request.getFilterValue());
+                // Si el filtro es por categoría, necesitamos convertir el string a enum
+                if (request.getFilterBy().equals("category")) {
+                    try {
+                        ServiceCategory category = ServiceCategory.valueOf(request.getFilterValue());
+                        query = query.whereEqualTo("category", category);
+                    } catch (IllegalArgumentException e) {
+                        throw new CustomExceptions.ProcessingException("Invalid category value");
+                    }
+                } else {
+                    // Para otros filtros mantener el comportamiento actual
+                    query = query.whereEqualTo(request.getFilterBy(), request.getFilterValue());
+                }
             }
 
-            // Aplicar ordenamiento
+            // Ordenamiento
             Query.Direction direction = request.getSortDirection().equalsIgnoreCase("DESC")
                     ? Query.Direction.DESCENDING
                     : Query.Direction.ASCENDING;
             query = query.orderBy(request.getSortBy(), direction);
 
-            // Aplicar paginación
+            // Paginación
             query = query.offset(request.getPage() * request.getSize())
                     .limit(request.getSize());
 
@@ -56,9 +68,16 @@ public class ServiceVeterinaryService {
                     })
                     .collect(Collectors.toList());
 
-            // Obtener total de elementos
-            long totalElements = firestore.collection("veterinary_services")
-                    .get().get().size();
+            // Obtener total de elementos filtrados
+            long totalElements;
+            if (request.getFilterBy() != null && request.getFilterBy().equals("category")) {
+                totalElements = firestore.collection("veterinary_services")
+                        .whereEqualTo("category", ServiceCategory.valueOf(request.getFilterValue()))
+                        .get().get().size();
+            } else {
+                totalElements = firestore.collection("veterinary_services")
+                        .get().get().size();
+            }
 
             return PaginatedResponse.of(services, request, totalElements);
 
@@ -86,6 +105,7 @@ public class ServiceVeterinaryService {
                     .recommendations(request.getRecommendations())
                     .warnings(request.getWarnings())
                     .requirements(request.getRequirements())
+                    .category(request.getCategory())
                     .build();
 
             // Guardar en Firestore
@@ -126,6 +146,8 @@ public class ServiceVeterinaryService {
             service.setRecommendations(request.getRecommendations());
             service.setWarnings(request.getWarnings());
             service.setRequirements(request.getRequirements());
+            service.setCategory(request.getCategory());
+
 
             // Guardar cambios
             firestore.collection("veterinary_services")
@@ -222,6 +244,7 @@ public class ServiceVeterinaryService {
                 .isActive(service.isActive())
                 .createdAt(service.getCreatedAt())
                 .updatedAt(service.getUpdatedAt())
+                .category(service.getCategory())
                 .build();
     }
 }

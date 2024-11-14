@@ -1,5 +1,6 @@
 package com.example.demo.dto;
 
+import com.example.demo.model.ServiceCategory;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
@@ -29,6 +30,7 @@ public class ServiceVeterinaryDTOs {
         private List<String> requirements;
         private List<String> recommendations;
         private List<String> warnings;
+        private ServiceCategory category;
     }
 
     @Data
@@ -52,6 +54,8 @@ public class ServiceVeterinaryDTOs {
         private List<String> requirements;
         private List<String> recommendations;
         private List<String> warnings;
+        private ServiceCategory category;
+
     }
 
     @Data
@@ -67,6 +71,7 @@ public class ServiceVeterinaryDTOs {
         private boolean isActive;
         private Date createdAt;
         private Date updatedAt;
+        private ServiceCategory category;
     }
     @Data
     @Builder
@@ -80,7 +85,8 @@ public class ServiceVeterinaryDTOs {
         private int durationMinutes;
         private List<String> requirements;  // Lista de requisitos (ej: "ayuno previo")
         private List<String> recommendations; // Recomendaciones para el servicio
-        private List<String> warnings;      // Advertencias importantes
+        private List<String> warnings;
+        private ServiceCategory category;
         private boolean isActive;
         private Date createdAt;
         private Date updatedAt;
@@ -106,5 +112,6 @@ public class ServiceVeterinaryDTOs {
         private List<String> requirements;
         private List<String> recommendations;
         private List<String> warnings;
+        private ServiceCategory category;
     }
 }
