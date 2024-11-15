@@ -285,6 +285,7 @@ public class ServiceVeterinaryService {
                 .isActive(service.isActive())
                 .createdAt(service.getCreatedAt())
                 .updatedAt(service.getUpdatedAt())
+                .category(service.getCategory())
                 .build();
     }
 
