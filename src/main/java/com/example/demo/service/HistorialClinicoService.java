@@ -3,9 +3,12 @@ package com.example.demo.service;
 
 import com.example.demo.dto.HistorialClinicoDTOs.*;
 import com.example.demo.dto.PetDTOs;
+import com.example.demo.dto.ServiceVeterinaryDTOs;
 import com.example.demo.dto.UserDTOs;
 import com.example.demo.exception.CustomExceptions;
 import com.example.demo.model.HistorialClinico;
+import com.example.demo.model.ServicioAdicional;
+import com.example.demo.model.ServicioRealizado;
 import com.google.cloud.firestore.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 @Service
 public class HistorialClinicoService {
@@ -26,6 +30,9 @@ public class HistorialClinicoService {
     @Autowired
     private PetService petService;
 
+    @Autowired
+    private ServiceVeterinaryService serviceVeterinaryService;
+
     public HistorialClinicoResponse createHistorial(String petId, CreateHistorialRequest request) {
         String veterinarianId = SecurityContextHolder.getContext().getAuthentication().getName();
 
@@ -34,6 +41,50 @@ public class HistorialClinicoService {
             PetDTOs.PetResponse pet = petService.getPetById(petId);
             if (pet == null) {
                 throw new CustomExceptions.NotFoundException("Mascota no encontrada");
+            }
+
+            // Procesar servicios realizados
+            List<ServicioRealizado> serviciosRealizados = new ArrayList<>();
+            double precioTotal = 0.0;
+
+            if (request.getServiciosRealizados() != null) {
+                for (ServicioRealizadoRequest servicioRequest : request.getServiciosRealizados()) {
+                    // Obtener detalles del servicio
+                    ServiceVeterinaryDTOs.ServiceDetailResponse serviceDetail =
+                            serviceVeterinaryService.getServiceDetails(servicioRequest.getServiceId());
+
+                    // Calcular precio final del servicio
+                    double precioServicio = servicioRequest.getPrecioPersonalizado() != null
+                            ? servicioRequest.getPrecioPersonalizado()
+                            : serviceDetail.getPrice();
+
+                    // Crear registro del servicio
+                    ServicioRealizado servicio = ServicioRealizado.builder()
+                            .serviceId(serviceDetail.getId())
+                            .serviceName(serviceDetail.getName())
+                            .precioBase(serviceDetail.getPrice())
+                            .precioPersonalizado(servicioRequest.getPrecioPersonalizado())
+                            .notas(servicioRequest.getNotas())
+                            .build();
+
+                    serviciosRealizados.add(servicio);
+                    precioTotal += precioServicio;
+                }
+            }
+
+            // Procesar servicios adicionales
+            List<ServicioAdicional> serviciosAdicionales = new ArrayList<>();
+            if (request.getServiciosAdicionales() != null) {
+                for (ServicioAdicionalRequest servicioRequest : request.getServiciosAdicionales()) {
+                    ServicioAdicional servicio = ServicioAdicional.builder()
+                            .descripcion(servicioRequest.getDescripcion())
+                            .precio(servicioRequest.getPrecio())
+                            .notas(servicioRequest.getNotas())
+                            .build();
+
+                    serviciosAdicionales.add(servicio);
+                    precioTotal += servicioRequest.getPrecio();
+                }
             }
 
             // Crear el historial clínico
@@ -46,6 +97,9 @@ public class HistorialClinicoService {
                     .diagnostico(request.getDiagnostico())
                     .tratamiento(request.getTratamiento())
                     .observaciones(request.getObservaciones())
+                    .serviciosRealizados(serviciosRealizados)
+                    .serviciosAdicionales(serviciosAdicionales)
+                    .precioTotal(precioTotal)
                     .fechaCreacion(new Date())
                     .fechaActualizacion(new Date())
                     .estado("ACTIVO")
@@ -59,7 +113,8 @@ public class HistorialClinicoService {
 
             return enrichHistorialResponse(historial);
         } catch (Exception e) {
-            throw new CustomExceptions.ProcessingException("Error creating historial clinico: " + e.getMessage());
+            throw new CustomExceptions.ProcessingException(
+                    "Error creating historial clinico: " + e.getMessage());
         }
     }
 
@@ -73,12 +128,64 @@ public class HistorialClinicoService {
             }
 
             HistorialClinico historial = historialDoc.toObject(HistorialClinico.class);
+
+            // Actualizar campos básicos
             historial.setMotivoConsulta(request.getMotivoConsulta());
             historial.setDiagnostico(request.getDiagnostico());
             historial.setTratamiento(request.getTratamiento());
             historial.setObservaciones(request.getObservaciones());
+
+            // Actualizar servicios realizados y recalcular precio total
+            double precioTotal = 0.0;
+
+            if (request.getServiciosRealizados() != null) {
+                List<ServicioRealizado> serviciosRealizados = new ArrayList<>();
+                for (ServicioRealizadoRequest servicioRequest : request.getServiciosRealizados()) {
+                    // Obtener detalles del servicio
+                    ServiceVeterinaryDTOs.ServiceDetailResponse serviceDetail =
+                            serviceVeterinaryService.getServiceDetails(servicioRequest.getServiceId());
+
+                    // Calcular precio final del servicio
+                    double precioServicio = servicioRequest.getPrecioPersonalizado() != null
+                            ? servicioRequest.getPrecioPersonalizado()
+                            : serviceDetail.getPrice();
+
+                    // Crear registro del servicio
+                    ServicioRealizado servicio = ServicioRealizado.builder()
+                            .serviceId(serviceDetail.getId())
+                            .serviceName(serviceDetail.getName())
+                            .precioBase(serviceDetail.getPrice())
+                            .precioPersonalizado(servicioRequest.getPrecioPersonalizado())
+                            .notas(servicioRequest.getNotas())
+                            .build();
+
+                    serviciosRealizados.add(servicio);
+                    precioTotal += precioServicio;
+                }
+                historial.setServiciosRealizados(serviciosRealizados);
+            }
+
+            // Actualizar servicios adicionales
+            if (request.getServiciosAdicionales() != null) {
+                List<ServicioAdicional> serviciosAdicionales = new ArrayList<>();
+                for (ServicioAdicionalRequest servicioRequest : request.getServiciosAdicionales()) {
+                    ServicioAdicional servicio = ServicioAdicional.builder()
+                            .descripcion(servicioRequest.getDescripcion())
+                            .precio(servicioRequest.getPrecio())
+                            .notas(servicioRequest.getNotas())
+                            .build();
+
+                    serviciosAdicionales.add(servicio);
+                    precioTotal += servicioRequest.getPrecio();
+                }
+                historial.setServiciosAdicionales(serviciosAdicionales);
+            }
+
+            // Actualizar precio total y fecha de actualización
+            historial.setPrecioTotal(precioTotal);
             historial.setFechaActualizacion(new Date());
 
+            // Guardar cambios
             historialRef.set(historial).get();
 
             return enrichHistorialResponse(historial);
@@ -125,32 +232,60 @@ public class HistorialClinicoService {
         }
     }
 
-    private HistorialClinicoResponse enrichHistorialResponse(HistorialClinico historial)
-            throws ExecutionException, InterruptedException {
-        // Obtener información del veterinario
-        UserDTOs.UserResponse veterinarian = userService.getUserById(historial.getVeterinarianId());
+    private HistorialClinicoResponse enrichHistorialResponse(HistorialClinico historial) {
+        try {
+            // Obtener información del veterinario
+            UserDTOs.UserResponse veterinarian = userService.getUserById(historial.getVeterinarianId());
 
-        // Obtener información de la mascota
-        PetDTOs.PetResponse pet = petService.getPetById(historial.getPetId());
+            // Obtener información de la mascota
+            PetDTOs.PetResponse pet = petService.getPetById(historial.getPetId());
 
-        // Obtener información del dueño
-        UserDTOs.UserResponse owner = userService.getUserById(pet.getOwnerId());
+            // Obtener información del dueño
+            UserDTOs.UserResponse owner = userService.getUserById(pet.getOwnerId());
 
-        return HistorialClinicoResponse.builder()
-                .id(historial.getId())
-                .petId(historial.getPetId())
-                .veterinarianId(historial.getVeterinarianId())
-                .veterinarianName(veterinarian.getNombre() + " " + veterinarian.getApellido())
-                .petName(pet.getName())
-                .ownerName(owner.getNombre() + " " + owner.getApellido())
-                .fechaVisita(historial.getFechaVisita())
-                .motivoConsulta(historial.getMotivoConsulta())
-                .diagnostico(historial.getDiagnostico())
-                .tratamiento(historial.getTratamiento())
-                .observaciones(historial.getObservaciones())
-                .fechaCreacion(historial.getFechaCreacion())
-                .fechaActualizacion(historial.getFechaActualizacion())
-                .estado(historial.getEstado())
-                .build();
+            // Convertir servicios realizados
+            List<ServicioRealizadoResponse> serviciosRealizadosResponse =
+                    historial.getServiciosRealizados().stream()
+                            .map(servicio -> ServicioRealizadoResponse.builder()
+                                    .serviceId(servicio.getServiceId())
+                                    .serviceName(servicio.getServiceName())
+                                    .precioBase(servicio.getPrecioBase())
+                                    .precioPersonalizado(servicio.getPrecioPersonalizado())
+                                    .notas(servicio.getNotas())
+                                    .build())
+                            .collect(Collectors.toList());
+
+            // Convertir servicios adicionales
+            List<ServicioAdicionalResponse> serviciosAdicionalesResponse =
+                    historial.getServiciosAdicionales().stream()
+                            .map(servicio -> ServicioAdicionalResponse.builder()
+                                    .descripcion(servicio.getDescripcion())
+                                    .precio(servicio.getPrecio())
+                                    .notas(servicio.getNotas())
+                                    .build())
+                            .collect(Collectors.toList());
+
+            return HistorialClinicoResponse.builder()
+                    .id(historial.getId())
+                    .petId(historial.getPetId())
+                    .veterinarianId(historial.getVeterinarianId())
+                    .veterinarianName(veterinarian.getNombre() + " " + veterinarian.getApellido())
+                    .petName(pet.getName())
+                    .ownerName(owner.getNombre() + " " + owner.getApellido())
+                    .fechaVisita(historial.getFechaVisita())
+                    .motivoConsulta(historial.getMotivoConsulta())
+                    .diagnostico(historial.getDiagnostico())
+                    .tratamiento(historial.getTratamiento())
+                    .observaciones(historial.getObservaciones())
+                    .serviciosRealizados(serviciosRealizadosResponse)
+                    .serviciosAdicionales(serviciosAdicionalesResponse)
+                    .precioTotal(historial.getPrecioTotal())
+                    .fechaCreacion(historial.getFechaCreacion())
+                    .fechaActualizacion(historial.getFechaActualizacion())
+                    .estado(historial.getEstado())
+                    .build();
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException("Error enriching historial response: " + e.getMessage());
+        }
     }
 }
