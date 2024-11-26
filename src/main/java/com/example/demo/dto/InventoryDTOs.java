@@ -17,12 +17,16 @@ public class InventoryDTOs {
         private String name;
         private int quantity;
         private int minThreshold;
+        @Min(value = 0, message = "El precio no puede ser negativo")
+        private double price; // Nuevo campo
     }
 
     @Data
     public static class UpdateInventoryItemRequest {
         private int quantity;
         private int minThreshold;
+        @Min(value = 0, message = "El precio no puede ser negativo")
+        private double price; // Nuevo campo
     }
 
     @Data
@@ -34,11 +38,13 @@ public class InventoryDTOs {
         private String name;
         private int quantity;
         private int minThreshold;
+        private double price; // Nuevo campo
         private int recommendedOrderQuantity;
         private Date dateAdded;
         private Date lastUpdated;
-        private String status; // Puede ser "OK", "WARNING", "CRITICAL"
+        private String status;
         private boolean needsReorder;
+        private boolean isFavorite;
     }
     @Data
     @Builder

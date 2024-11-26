@@ -76,6 +76,7 @@ public class InventoryService {
         item.setQuantity(request.getQuantity());
         item.setMinThreshold(request.getMinThreshold());
         item.setDateAdded(new Date());
+        item.setPrice(request.getPrice());
 
         try {
             getFirestore().collection("inventory").document(item.getId()).set(item).get();
@@ -92,6 +93,7 @@ public class InventoryService {
                 throw new CustomExceptions.NotFoundException("Inventory item not found with id: " + id);
             }
             item.setQuantity(request.getQuantity());
+            item.setPrice(request.getPrice());
             item.setMinThreshold(request.getMinThreshold());
 
             getFirestore().collection("inventory").document(id).set(item).get();
@@ -178,6 +180,7 @@ public class InventoryService {
         response.setQuantity(item.getQuantity());
         response.setMinThreshold(item.getMinThreshold());
         response.setDateAdded(item.getDateAdded());
+        response.setPrice(item.getPrice());
         return response;
     }
     public LowStockAlertDTO createAlertDTO(InventoryItem item) {
@@ -268,6 +271,39 @@ public class InventoryService {
                     "Error creating restock order: " + e.getMessage());
         }
     }
+    public InventoryItemResponse getItemById(String id) {
+        try {
+            // Obtener el documento del inventario
+            DocumentSnapshot doc = firestore.collection("inventory")
+                    .document(id)
+                    .get()
+                    .get();
+
+            if (!doc.exists()) {
+                throw new CustomExceptions.NotFoundException("Item not found with id: " + id);
+            }
+
+            InventoryItem item = doc.toObject(InventoryItem.class);
+
+            // Verificar si el item es favorito para el usuario actual
+            boolean isFavorite = checkIfFavorite(id);
+
+            return convertToResponse(item, isFavorite);
+
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException(
+                    "Error fetching inventory item: " + e.getMessage());
+        }
+    }
+    private InventoryItemResponse convertToResponse(InventoryItem item, boolean isFavorite) {
+        return InventoryItemResponse.builder()
+                .id(item.getId())
+                .name(item.getName())
+                .quantity(item.getQuantity())
+                .price(item.getPrice())
+                .isFavorite(isFavorite)
+                .build();
+    }
     private RestockOrderDTO convertToRestockDTO(RestockOrder order) {
         if (order == null) return null;
 
@@ -283,6 +319,23 @@ public class InventoryService {
                 .notes(order.getNotes())
                 .build();
     }
+    private boolean checkIfFavorite(String itemId) {
+        String userId = SecurityContextHolder.getContext().getAuthentication().getName();
+        try {
+            // Buscar en la colección de favoritos
+            QuerySnapshot snapshot = firestore.collection("favorites")
+                    .whereEqualTo("userId", userId)
+                    .whereEqualTo("itemId", itemId)
+                    .whereEqualTo("itemType", "PRODUCT")
+                    .get()
+                    .get();
+
+            return !snapshot.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
 
 
 }

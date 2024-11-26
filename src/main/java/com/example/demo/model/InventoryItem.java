@@ -13,4 +13,5 @@ public class InventoryItem {
     private int recommendedOrderQuantity;
     private Date dateAdded;
     private Date lastUpdated;
+    private double price;
 }
