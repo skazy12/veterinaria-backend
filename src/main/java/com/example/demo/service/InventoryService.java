@@ -67,6 +67,44 @@ public class InventoryService {
                     "Error fetching inventory items: " + e.getMessage());
         }
     }
+    public PaginatedResponse<InventoryItemResponse> searchByName(String searchTerm, PaginationRequest request) {
+        try {
+            CollectionReference inventoryRef = firestore.collection("inventory");
+            Query query = inventoryRef;
+
+            // Búsqueda case-insensitive por nombre
+            if (searchTerm != null && !searchTerm.isEmpty()) {
+                // Límite superior para la búsqueda
+                String upperBound = searchTerm + "\uf8ff";
+                query = query.whereGreaterThanOrEqualTo("name", searchTerm)
+                        .whereLessThanOrEqualTo("name", upperBound);
+            }
+
+            // Aplicar ordenamiento
+            Query.Direction direction = request.getSortDirection().equalsIgnoreCase("DESC") ?
+                    Query.Direction.DESCENDING : Query.Direction.ASCENDING;
+            query = query.orderBy("name", direction);
+
+            // Paginación
+            query = query.offset(request.getPage() * request.getSize())
+                    .limit(request.getSize());
+
+            QuerySnapshot querySnapshot = query.get().get();
+            List<InventoryItemResponse> items = querySnapshot.getDocuments().stream()
+                    .map(doc -> {
+                        InventoryItem item = doc.toObject(InventoryItem.class);
+                        return convertToInventoryItemResponse(item);
+                    })
+                    .collect(Collectors.toList());
+
+            // Obtener total de elementos
+            long totalElements = FirestorePaginationUtils.getTotalElements(inventoryRef);
+
+            return PaginatedResponse.of(items, request, totalElements);
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException("Error searching inventory items: " + e.getMessage());
+        }
+    }
 
 
     public InventoryItemResponse addItem(AddInventoryItemRequest request) {
@@ -105,58 +143,30 @@ public class InventoryService {
 
     public PaginatedResponse<LowStockAlertDTO> getLowStockItems(PaginationRequest request) {
         try {
+            if (request.getSortBy() == null) request.setSortBy("name");
+            if (request.getSortDirection() == null) request.setSortDirection("ASC");
+            if (request.getSize() == 0) request.setSize(10);
+
             CollectionReference inventoryRef = firestore.collection("inventory");
 
-            // Construir query base
-            Query query = inventoryRef;
+            // Obtener todos los documentos del inventario
+            QuerySnapshot querySnapshot = inventoryRef.get().get();
 
-            // Agregar condición de bajo stock
-            query = query.whereGreaterThan("minThreshold", 0)  // Solo items con umbral definido
-                    .whereLessThanOrEqualTo("quantity", "minThreshold");
-
-            // Aplicar filtros adicionales
-            if (request.getFilterBy() != null && request.getFilterValue() != null) {
-                query = query.whereEqualTo(request.getFilterBy(), request.getFilterValue());
-            }
-
-            // Ordenamiento
-            Query.Direction direction = request.getSortDirection().equalsIgnoreCase("DESC")
-                    ? Query.Direction.DESCENDING
-                    : Query.Direction.ASCENDING;
-
-            // Asegurarse de que el campo de ordenamiento existe
-            String sortBy = request.getSortBy().equals("id") ? "quantity" : request.getSortBy();
-            query = query.orderBy(sortBy, direction);
-
-            // Paginación
-            query = query.offset(request.getPage() * request.getSize())
-                    .limit(request.getSize());
-
-            // Ejecutar query
-            QuerySnapshot querySnapshot = query.get().get();
-
-            // Convertir resultados
+            // Filtrar en memoria los items con stock bajo
             List<LowStockAlertDTO> alerts = querySnapshot.getDocuments().stream()
-                    .map(doc -> {
-                        InventoryItem item = doc.toObject(InventoryItem.class);
-                        // Asegurarse de establecer el ID del documento
-                        if (item != null) {
-                            item.setId(doc.getId());
-                        }
-                        return createAlertDTO(item);
-                    })
-                    .filter(Objects::nonNull)
+                    .map(doc -> doc.toObject(InventoryItem.class))
+                    .filter(item -> item != null && item.getQuantity() <= item.getMinThreshold())
+                    .map(this::createAlertDTO)
                     .collect(Collectors.toList());
 
-            // Contar total de elementos (en una consulta separada)
-            long totalElements = getTotalLowStockItems(inventoryRef);
+            // Aplicar paginación manual
+            int start = request.getPage() * request.getSize();
+            int end = Math.min(start + request.getSize(), alerts.size());
+            List<LowStockAlertDTO> paginatedAlerts = alerts.subList(start, end);
 
-            return PaginatedResponse.of(alerts, request, totalElements);
-
+            return PaginatedResponse.of(paginatedAlerts, request, alerts.size());
         } catch (Exception e) {
-            log.error("Error fetching low stock items: ", e);
-            throw new CustomExceptions.ProcessingException(
-                    "Error fetching low stock items: " + e.getMessage());
+            throw new CustomExceptions.ProcessingException("Error fetching low stock items: " + e.getMessage());
         }
     }
     /**
@@ -183,20 +193,14 @@ public class InventoryService {
         response.setPrice(item.getPrice());
         return response;
     }
-    public LowStockAlertDTO createAlertDTO(InventoryItem item) {
-        if (item == null) {
-            return null;
-        }
-
-        AlertStatus status = calculateAlertStatus(item);
-
+    private LowStockAlertDTO createAlertDTO(InventoryItem item) {
         return LowStockAlertDTO.builder()
-                .id(UUID.randomUUID().toString()) // Generar nuevo ID para la alerta
+                .id(UUID.randomUUID().toString())
                 .productId(item.getId())
                 .productName(item.getName())
                 .currentStock(item.getQuantity())
                 .minThreshold(item.getMinThreshold())
-                .status(status)
+                .status(item.getQuantity() <= 0 ? AlertStatus.CRITICAL : AlertStatus.WARNING)
                 .createdAt(new Date())
                 .isAcknowledged(false)
                 .build();

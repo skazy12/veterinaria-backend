@@ -7,6 +7,7 @@ import com.example.demo.dto.PaginationRequest;
 import com.example.demo.service.InventoryService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,19 @@ public class InventoryController {
             @ModelAttribute PaginationRequest paginationRequest) {
         return ResponseEntity.ok(ApiResponse.success(
                 inventoryService.getAllItems(paginationRequest)));
+    }
+    @GetMapping("/search")
+    @PreAuthorize("hasPermission('', 'GESTIONAR_INVENTARIO')")
+    public ResponseEntity<ApiResponse<PaginatedResponse<InventoryItemResponse>>> searchInventory(
+            @RequestParam String searchTerm,
+            @ModelAttribute PaginationRequest paginationRequest) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(
+                    inventoryService.searchByName(searchTerm, paginationRequest)));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("PROCESSING_ERROR", e.getMessage()));
+        }
     }
 
     @GetMapping("/low-stock")
