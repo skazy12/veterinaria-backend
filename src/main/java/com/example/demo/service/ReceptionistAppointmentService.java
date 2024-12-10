@@ -18,6 +18,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.time.ZoneOffset;
 
 @Service
 public class ReceptionistAppointmentService {
@@ -40,12 +41,12 @@ public class ReceptionistAppointmentService {
      */
     public PaginatedResponse<DailyAppointmentDTO> getDailyAppointmentsForReceptionist(Date date, PaginationRequest request) {
         try {
-            // Convertir Date a LocalDate para manejar el rango del día
-            LocalDate localDate = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            // Convertir Date a LocalDate en UTC para evitar problemas de zona horaria
+            LocalDate localDate = date.toInstant().atZone(ZoneOffset.UTC).toLocalDate();
 
-            // Obtener inicio y fin del día
-            Date startOfDay = Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
-            Date endOfDay = Date.from(localDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            // Obtener inicio y fin del día en UTC
+            Date startOfDay = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
+            Date endOfDay = Date.from(localDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
 
             // Construir query base
             CollectionReference appointmentsRef = firestore.collection("appointments");
