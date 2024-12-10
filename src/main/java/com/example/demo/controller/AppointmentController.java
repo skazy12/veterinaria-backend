@@ -73,7 +73,7 @@ public class AppointmentController {
     }
 
     @PostMapping("/{appointmentId}/cancel")
-    @PreAuthorize("hasPermission(null, 'PROGRAMAR_CITA') and @appointmentService.isOwner(#appointmentId)")
+    @PreAuthorize("hasPermission(null, 'PROGRAMAR_CITA') or @appointmentService.isOwner(#appointmentId)")
     public ResponseEntity<ApiResponse<AppointmentDTOs.AppointmentResponse>> cancelAppointment(
             @PathVariable String appointmentId
     ) {

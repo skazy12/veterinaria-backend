@@ -31,6 +31,9 @@ public class AppointmentService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private ReceptionistAppointmentService receptionistAppointmentService;
+
     private static final long MINIMUM_CANCELLATION_HOURS = 24;
     private static final long MINIMUM_RESCHEDULE_HOURS = 24;
     private static final Logger logger = LoggerFactory.getLogger(AppointmentService.class);
@@ -498,5 +501,10 @@ public class AppointmentService {
         } catch (Exception e) {
             //log.error("Error sending new appointment notifications: {}", e.getMessage());
         }
+    }
+    public PaginatedResponse<DailyAppointmentDTO> getDailyAppointmentsForReceptionist(
+            Date date,
+            PaginationRequest request) {
+        return receptionistAppointmentService.getDailyAppointmentsForReceptionist(date, request);
     }
 }

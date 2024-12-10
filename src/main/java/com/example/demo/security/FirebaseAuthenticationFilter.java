@@ -38,6 +38,10 @@ public class FirebaseAuthenticationFilter extends OncePerRequestFilter {
                 handleAuthenticationFailure(response, "Invalid token");
                 return;
             }
+            if (isTokenExpired(decodedToken)) {
+                handleAuthenticationFailure(response, "Token expired");
+                return;
+            }
 
             List<SimpleGrantedAuthority> authorities = extractAuthorities(decodedToken);
             setAuthenticationInContext(decodedToken, authorities);
@@ -108,7 +112,32 @@ public class FirebaseAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.clearContext();
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
-        response.getWriter().write("{\"error\":\"" + message + "\"}");
+
+        String jsonResponse = String.format(
+                "{\"success\":false,\"error\":{\"code\":\"AUTH_ERROR\",\"message\":\"%s\"}}",
+                message
+        );
+
+        response.getWriter().write(jsonResponse);
+    }
+    private boolean isTokenExpired(FirebaseToken token) {
+        try {
+            // Obtener el tiempo de expiración desde los claims del token
+            Long exp = (Long) token.getClaims().get("exp");
+            if (exp == null) {
+                return true; // Si no hay claim de expiración, consideramos el token como expirado
+            }
+
+            // Convertir a milisegundos (exp está en segundos)
+            long expirationTimeMs = exp * 1000L;
+            long currentTimeMs = System.currentTimeMillis();
+
+            // Considerar el token expirado si está a 5 segundos o menos de expirar
+            return (expirationTimeMs - currentTimeMs) <= 5000;
+        } catch (Exception e) {
+            logger.error("Error checking token expiration", e);
+            return true; // En caso de error, consideramos el token como expirado
+        }
     }
 
 }
