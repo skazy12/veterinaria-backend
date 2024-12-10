@@ -341,5 +341,117 @@ public class InventoryService {
     }
 
 
+    public InventoryItem addInventoryItem(InventoryItem newItem) {
+        try {
+            // Generamos un ID único para el nuevo item
+            String itemId = UUID.randomUUID().toString();
+            newItem.setId(itemId);
+
+            // Establecemos fechas de creación/actualización
+            Date currentDate = new Date();
+            newItem.setDateAdded(currentDate);
+            newItem.setLastUpdated(currentDate);
+
+            // Validamos los datos del item
+            validateInventoryItem(newItem);
+
+            // Guardamos en Firestore
+            DocumentReference docRef = firestore.collection("inventory").document(itemId);
+            docRef.set(newItem).get();
+
+            return newItem;
+
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException("Error al agregar item al inventario: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Actualiza un item existente en el inventario
+     * @param itemId ID del item a actualizar
+     * @param updatedItem Datos actualizados del item
+     * @return InventoryItem actualizado
+     */
+    public InventoryItem updateInventoryItem(String itemId, InventoryItem updatedItem) {
+        try {
+            // Verificamos si el item existe
+            DocumentSnapshot existingItemDoc = firestore.collection("inventory")
+                    .document(itemId)
+                    .get()
+                    .get();
+
+            if (!existingItemDoc.exists()) {
+                throw new CustomExceptions.NotFoundException("Item no encontrado con ID: " + itemId);
+            }
+
+            // Obtener el item existente
+            InventoryItem existingItem = existingItemDoc.toObject(InventoryItem.class);
+
+            // Mantener los campos existentes y actualizar solo los nuevos
+            InventoryItem mergedItem = new InventoryItem();
+            mergedItem.setId(itemId);
+            mergedItem.setName(existingItem.getName()); // Mantener nombre original
+            mergedItem.setDateAdded(existingItem.getDateAdded());
+            mergedItem.setLastUpdated(new Date());
+
+            // Actualizar solo los campos que vienen en el request
+            mergedItem.setQuantity(updatedItem.getQuantity());
+            mergedItem.setMinThreshold(updatedItem.getMinThreshold());
+            mergedItem.setPrice(updatedItem.getPrice());
+
+            // Manejar recommendedOrderQuantity especialmente
+            if (updatedItem.getRecommendedOrderQuantity() > 0) {
+                mergedItem.setRecommendedOrderQuantity(updatedItem.getRecommendedOrderQuantity());
+            } else {
+                mergedItem.setRecommendedOrderQuantity(existingItem.getRecommendedOrderQuantity());
+            }
+
+            // Validar los datos actualizados
+            validateInventoryItem(mergedItem);
+
+            // Actualizar en Firestore
+            firestore.collection("inventory")
+                    .document(itemId)
+                    .set(mergedItem)
+                    .get();
+
+            return mergedItem;
+
+        } catch (CustomExceptions.NotFoundException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException("Error al actualizar item del inventario: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Valida los datos de un item de inventario
+     * @param item Item a validar
+     * @throws CustomExceptions.ProcessingException si la validación falla
+     */
+    private void validateInventoryItem(InventoryItem item) {
+        if (item.getName() == null || item.getName().trim().isEmpty()) {
+            throw new CustomExceptions.ProcessingException("El nombre del item es requerido");
+        }
+
+        if (item.getQuantity() < 0) {
+            throw new CustomExceptions.ProcessingException("La cantidad no puede ser negativa");
+        }
+
+        if (item.getMinThreshold() < 0) {
+            throw new CustomExceptions.ProcessingException("El umbral mínimo no puede ser negativo");
+        }
+
+        if (item.getPrice() < 0) {
+            throw new CustomExceptions.ProcessingException("El precio no puede ser negativo");
+        }
+
+        // Agregamos validación para el recommendedOrderQuantity
+        if (item.getRecommendedOrderQuantity() < 0) {
+            throw new CustomExceptions.ProcessingException("La cantidad recomendada de pedido no puede ser negativa");
+        }
+    }
+
+
 
 }
