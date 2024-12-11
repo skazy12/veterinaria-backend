@@ -79,6 +79,21 @@ public class UserController {
         }
     }
 
+    @GetMapping("/searchAllUsers")
+    @PreAuthorize("hasPermission(null, 'VER_USUARIOS')")
+    public ResponseEntity<ApiResponse<PaginatedResponse<UserResponse>>> searchAllUsers(
+            @RequestParam String searchTerm,
+            @ModelAttribute PaginationRequest paginationRequest) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(
+                    userService.searchAllUsers(searchTerm, paginationRequest)));
+        } catch (Exception e) {
+            log.error("Error searching users:", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("PROCESSING_ERROR", e.getMessage()));
+        }
+    }
+
 
 
  /*

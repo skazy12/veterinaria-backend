@@ -50,7 +50,7 @@ public class UserService {
             throw new CustomExceptions.ProcessingException("Error fetching user notes: " + e.getMessage());
         }
     }
-    // En UserService.java
+    // Buscar clientes
     public PaginatedResponse<UserResponse> searchUsers(String searchTerm, PaginationRequest request) {
         try {
             CollectionReference usersRef = firestore.collection("users");
@@ -92,6 +92,52 @@ public class UserService {
                     totalPages
             );
         } catch (Exception e) {
+            throw new CustomExceptions.ProcessingException("Error searching users: " + e.getMessage());
+        }
+    }
+    //Buscar todos los usuarios
+    public PaginatedResponse<UserResponse> searchAllUsers(String searchTerm, PaginationRequest request) {
+        try {
+            CollectionReference usersRef = firestore.collection("users");
+
+            // Obtener todos los documentos
+            QuerySnapshot allClientsSnapshot = usersRef.get().get();
+
+            // Filtrar en memoria por nombre (case insensitive y null-safe)
+            List<UserResponse> filteredUsers = allClientsSnapshot.getDocuments().stream()
+                    .map(doc -> doc.toObject(User.class))
+                    .filter(user -> {
+                        if (user == null || user.getNombre() == null) return false;
+
+                        // Crear nombre completo y hacer búsqueda case-insensitive
+                        String fullName = (user.getNombre() + " " +
+                                (user.getApellido() != null ? user.getApellido() : ""))
+                                .toLowerCase();
+                        return fullName.contains(searchTerm.toLowerCase());
+                    })
+                    .map(this::convertToUserResponse)
+                    .collect(Collectors.toList());
+
+            // Calcular el total de elementos y páginas
+            long totalElements = filteredUsers.size();
+            int totalPages = (int) Math.ceil((double) totalElements / request.getSize());
+
+            // Aplicar paginación
+            List<UserResponse> paginatedUsers = filteredUsers.stream()
+                    .skip((long) request.getPage() * request.getSize())
+                    .limit(request.getSize())
+                    .collect(Collectors.toList());
+
+            return new PaginatedResponse<>(
+                    paginatedUsers,
+                    request.getPage(),
+                    request.getSize(),
+                    totalElements,
+                    totalPages
+            );
+
+        } catch (Exception e) {
+            logger.error("Error searching users: ", e);
             throw new CustomExceptions.ProcessingException("Error searching users: " + e.getMessage());
         }
     }
