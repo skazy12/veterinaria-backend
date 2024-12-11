@@ -1,5 +1,6 @@
 package com.example.demo.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -63,7 +64,9 @@ public class AppointmentDTOs {
     public static class RescheduleRequest {
         @NotNull(message = "La nueva fecha es obligatoria")
         private Date newDate;
+        @NotBlank(message = "El motivo de reprogramación es obligatorio")
         private String reason;
+
     }
     @Data
     @Builder

@@ -174,9 +174,11 @@ public class ClientAppointmentService {
             // Guardar fecha anterior para notificación
             Date oldDate = appointment.getAppointmentDate();
 
-            // Actualizar fecha
+            // Actualizar fecha y motivo
             appointment.setAppointmentDate(request.getNewDate());
+            appointment.setReason(request.getReason()); // Aquí se asigna el motivo
             appointmentDoc.getReference().set(appointment).get();
+
 
             // Enviar notificaciones
             sendRescheduleNotifications(appointment, oldDate);
@@ -188,6 +190,7 @@ public class ClientAppointmentService {
             throw new CustomExceptions.ProcessingException("Error rescheduling appointment");
         }
     }
+
 
     private AppointmentDTOs.ClientPetAppointmentDTO convertToDTO(Appointment appointment)
             throws ExecutionException, InterruptedException {
